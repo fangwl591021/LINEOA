@@ -12,6 +12,13 @@ test("free plan contract is present", () => {
   assert.match(worker, /\/api\/knowledge/);
 });
 
+test("production auth constraints are enforced", () => {
+  assert.match(worker, /url\.pathname === "\/admin"[\s\S]*await requireAdmin\(request, env\)/);
+  const iterations = worker.match(/iterations:\s*(\d+)/);
+  assert.ok(iterations);
+  assert.equal(Number(iterations[1]), 100000);
+});
+
 test("registration and knowledge tables exist", () => {
   assert.match(schema, /CREATE TABLE IF NOT EXISTS users/);
   assert.match(schema, /CREATE TABLE IF NOT EXISTS sessions/);

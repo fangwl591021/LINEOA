@@ -90,9 +90,11 @@ export default {
         return json({ ok: true, logs: rows.results || [] }, 200, cors);
       }
       if (url.pathname === "/privacy") return html(privacyPage(env));
-      if (url.pathname === "/admin" || url.pathname === "/app" || url.pathname === "/") {
-        return html(appPage(env, url.pathname === "/admin" ? "admin" : "app"));
+      if (url.pathname === "/admin") {
+        await requireAdmin(request, env);
+        return html(appPage(env, "admin"));
       }
+      if (url.pathname === "/app" || url.pathname === "/") return html(appPage(env, "app"));
       return json({ ok: false, message: "Not found" }, 404, cors);
     } catch (error) {
       const status = Number(error?.status || 500);
@@ -361,7 +363,7 @@ async function sha256(value) {
 async function derivePassword(password, salt) {
   const material = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", hash: "SHA-256", salt: encoder.encode(salt), iterations: 120000 },
+    { name: "PBKDF2", hash: "SHA-256", salt: encoder.encode(salt), iterations: 100000 },
     material,
     256
   );
