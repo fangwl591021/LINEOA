@@ -3,9 +3,11 @@
 (() => {
   const ROOT_ID = "lineoa-extension-root";
   const MODE_KEY = "lineoa_panel_mode";
+  const LAYOUT_VERSION_KEY = "lineoa_layout_version";
+  const LAYOUT_VERSION = 2;
   const MESSAGE_LIMIT = 5;
   const state = {
-    mode: "side",
+    mode: "float",
     authMode: "login",
     user: null,
     limits: null,
@@ -31,8 +33,12 @@
     bindRootEvents();
     observeReinsertion();
 
-    const stored = await chrome.storage.local.get(MODE_KEY);
-    if (["float", "side", "full"].includes(stored[MODE_KEY])) state.mode = stored[MODE_KEY];
+    const stored = await chrome.storage.local.get([MODE_KEY, LAYOUT_VERSION_KEY]);
+    if (stored[LAYOUT_VERSION_KEY] === LAYOUT_VERSION && ["float", "side", "full"].includes(stored[MODE_KEY])) {
+      state.mode = stored[MODE_KEY];
+    } else {
+      await chrome.storage.local.set({ [MODE_KEY]: "float", [LAYOUT_VERSION_KEY]: LAYOUT_VERSION });
+    }
     await restoreSession();
   }
 
@@ -323,7 +329,7 @@
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>免審查測試版 v0.1.2</small></div>
+          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.3</small></div>
           <nav aria-label="顯示模式">
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
             <button type="button" data-action="mode" data-mode="${state.mode === "full" ? "side" : "full"}" title="切換全螢幕">${state.mode === "full" ? "▣" : "□"}</button>
@@ -382,7 +388,7 @@
         <h3>建議回覆 <span>${state.suggestions.length}</span></h3>
         ${state.suggestions.length ? state.suggestions.map((item, index) => suggestionCard(item, index)).join("") : emptyCard(state.messages.length ? "知識庫中沒有相近答案" : "讀取對話後顯示建議")}
       </section>
-      <a class="lineoa-manage" href="https://line-oa.fangwl591021.workers.dev/app" target="_blank" rel="noreferrer">管理我的知識庫 ↗</a>`;
+      <a class="lineoa-manage" href="https://action.fangwl591021.workers.dev/app/admin.html" target="_blank" rel="noreferrer">開啟 LINEOA 管理後台 ↗</a>`;
   }
 
   function suggestionCard(item, index) {

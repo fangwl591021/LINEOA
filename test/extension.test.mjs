@@ -11,15 +11,18 @@ const testing = readFileSync(new URL("../extension/TESTING.md", import.meta.url)
 
 test("extension uses a narrow Manifest V3 boundary", () => {
   assert.equal(manifest.manifest_version, 3);
-  assert.deepEqual(manifest.permissions, ["storage", "activeTab"]);
+  assert.equal(manifest.version, "0.1.3");
+  assert.deepEqual(manifest.permissions, ["storage"]);
   assert.deepEqual(manifest.host_permissions, ["https://line-oa.fangwl591021.workers.dev/*"]);
   assert.deepEqual(manifest.content_scripts[0].matches, [
     "https://manager.line.biz/*",
     "https://chat.line.biz/*"
   ]);
   assert.equal(manifest.content_scripts[0].all_frames, undefined);
-  assert.match(popup, /https:\/\/chat\.line\.biz\//);
-  assert.match(popup, /window\.close\(\)/);
+  assert.equal(manifest.action.default_popup, undefined);
+  assert.match(background, /chrome\.action\.onClicked/);
+  assert.match(background, /https:\/\/action\.fangwl591021\.workers\.dev\/app\/admin\.html/);
+  assert.match(popup, /https:\/\/action\.fangwl591021\.workers\.dev\/app\/admin\.html/);
 });
 
 test("session token remains behind the extension background worker", () => {
@@ -39,6 +42,9 @@ test("content workflow is manual and has three display modes", () => {
   assert.match(styles, /\[data-mode="float"\]/);
   assert.match(styles, /\[data-mode="side"\]/);
   assert.match(styles, /\[data-mode="full"\]/);
+  assert.match(content, /mode: "float"/);
+  assert.match(content, /lineoa_layout_version/);
+  assert.match(content, /https:\/\/action\.fangwl591021\.workers\.dev\/app\/admin\.html/);
 });
 
 test("chat.line.biz has a visible central-chat fallback", () => {

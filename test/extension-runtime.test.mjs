@@ -79,6 +79,15 @@ test("content script inserts one isolated panel and switches modes without touch
 
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(root.id, "lineoa-extension-root");
+  assert.equal(root.dataset.mode, "float");
+  assert.match(root.innerHTML, /lineoa-fab/);
+  await listeners.get("click")({
+    target: {
+      closest() {
+        return { dataset: { action: "mode", mode: "side" } };
+      }
+    }
+  });
   assert.equal(root.dataset.mode, "side");
   assert.match(root.innerHTML, /登入 LINEOA/);
   assert.equal(hostPage.marker, "LINE OA host content");
@@ -187,6 +196,9 @@ test("chat.line.biz fallback reads central visible bubbles and excludes the left
 
   await new Promise((resolve) => setImmediate(resolve));
   await new Promise((resolve) => setImmediate(resolve));
+  await listeners.get("click")({
+    target: { closest() { return { dataset: { action: "mode", mode: "side" } }; } }
+  });
   await listeners.get("click")({
     target: { closest() { return { dataset: { action: "scan" } }; } }
   });
