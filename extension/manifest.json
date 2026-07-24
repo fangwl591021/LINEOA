@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LINEOA 測試版",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "在 LINE Official Account Manager 顯示知識庫回覆建議；不會自動發送訊息。",
   "permissions": ["storage", "activeTab"],
   "host_permissions": ["https://line-oa.fangwl591021.workers.dev/*"],
@@ -14,7 +14,10 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://manager.line.biz/*"],
+      "matches": [
+        "https://manager.line.biz/*",
+        "https://chat.line.biz/*"
+      ],
       "css": ["styles.css"],
       "js": ["content.js"],
       "run_at": "document_idle"

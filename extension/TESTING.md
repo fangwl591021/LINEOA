@@ -2,7 +2,7 @@
 
 ## 安裝
 
-1. 解壓縮 `LINEOA-extension-v0.1.0.zip`。
+1. 解壓縮 `LINEOA-extension-v0.1.1.zip`。
 2. 在 Chrome 開啟 `chrome://extensions`。
 3. 開啟右上角「開發人員模式」。
 4. 點選「載入未封裝項目」。
@@ -20,7 +20,7 @@
 
 ## 安全邊界
 
-- 只在 `https://manager.line.biz/*` 載入。
+- 只在 LINE 官方管理頁 `https://manager.line.biz/*` 與聊天室 `https://chat.line.biz/*` 載入。
 - 只有使用者按下比對按鈕時，才讀取目前視窗內可見文字。
 - 聊天文字只在瀏覽器內與已下載的知識庫比對，不回傳 LINEOA API。
 - 不讀取 Cookie、LINE Token 或 LINE Authorization Header。

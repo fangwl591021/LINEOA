@@ -298,7 +298,7 @@
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>免審查測試版 v0.1.0</small></div>
+          <div><strong>LINEOA</strong><small>免審查測試版 v0.1.1</small></div>
           <nav aria-label="顯示模式">
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
             <button type="button" data-action="mode" data-mode="${state.mode === "full" ? "side" : "full"}" title="切換全螢幕">${state.mode === "full" ? "▣" : "□"}</button>

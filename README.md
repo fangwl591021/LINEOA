@@ -28,6 +28,8 @@ test/                     契約測試
 4. 點選「載入未封裝項目」，選擇內含 `manifest.json` 的 `extension/` 資料夾。
 5. 開啟 `https://manager.line.biz/`。
 
+選擇帳號並切換至聊天室後，網址會變成 `https://chat.line.biz/`；LINEOA 會繼續載入，不會把使用者帶回帳號目錄。
+
 完整測試與隱私邊界請參考 `extension/TESTING.md`。
 
 ## 部署前
