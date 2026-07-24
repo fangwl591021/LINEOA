@@ -1,0 +1,77 @@
+:root {
+  color: #17212b;
+  font-family: Inter, "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 16px;
+  width: 300px;
+}
+
+header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+header > span {
+  align-items: center;
+  background: #06c755;
+  border-radius: 11px;
+  color: #fff;
+  display: flex;
+  font-size: 12px;
+  font-weight: 900;
+  height: 38px;
+  justify-content: center;
+  width: 38px;
+}
+
+header div {
+  display: grid;
+}
+
+header strong {
+  font-size: 18px;
+}
+
+header small,
+footer {
+  color: #667085;
+  font-size: 11px;
+}
+
+p {
+  background: #f3f7f5;
+  border-radius: 8px;
+  color: #344054;
+  font-size: 12px;
+  margin: 14px 0;
+  padding: 9px;
+}
+
+button {
+  background: #06c755;
+  border: 1px solid #06c755;
+  border-radius: 9px;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  margin-bottom: 8px;
+  padding: 10px;
+  width: 100%;
+}
+
+button.secondary {
+  background: #fff;
+  border-color: #dfe5ea;
+  color: #17212b;
+}
+
+footer {
+  border-top: 1px solid #eef1f4;
+  margin-top: 8px;
+  padding-top: 10px;
+}

@@ -20,6 +20,16 @@ extension/                Manifest V3 Chrome 擴充功能
 test/                     契約測試
 ```
 
+## 免審查測試版安裝
+
+1. 下載並解壓縮 LINEOA 擴充功能測試版。
+2. 開啟 `chrome://extensions`。
+3. 啟用「開發人員模式」。
+4. 點選「載入未封裝項目」，選擇內含 `manifest.json` 的 `extension/` 資料夾。
+5. 開啟 `https://manager.line.biz/`。
+
+完整測試與隱私邊界請參考 `extension/TESTING.md`。
+
 ## 部署前
 
 1. 建立 D1：`wrangler d1 create lineoa_saas`
