@@ -181,24 +181,49 @@
       '[role="log"] > *',
       'main [role="listitem"]'
     ];
-    let candidates = preferredSelectors.flatMap((selector) => Array.from(document.querySelectorAll(selector)));
-
-    if (!candidates.length) {
-      candidates = Array.from(document.querySelectorAll('main p, main [dir="auto"], main [role="row"]'));
+    const preferred = preferredSelectors.flatMap((selector) => Array.from(document.querySelectorAll(selector)));
+    const fallback = location.hostname === "chat.line.biz"
+      ? Array.from(document.querySelectorAll("p, span, div"))
+      : Array.from(document.querySelectorAll('main p, main [dir="auto"], main [role="row"]'));
+    const records = [
+      ...messageRecords(preferred, false),
+      ...messageRecords(fallback, location.hostname === "chat.line.biz")
+    ];
+    const latestByText = new Map();
+    for (const record of records) {
+      const previous = latestByText.get(record.text);
+      if (!previous || record.top >= previous.top) latestByText.set(record.text, record);
     }
-
-    const texts = [];
-    const seen = new Set();
-    for (const element of [...new Set(candidates)]) {
-      if (element.closest(`#${ROOT_ID}`) || !isVisibleInViewport(element) || element.childElementCount > 8) continue;
-      const text = normalizeDisplayText(element.innerText || element.textContent || "");
-      if (!text || text.length > 600 || seen.has(text)) continue;
-      seen.add(text);
-      texts.push(text);
-    }
-    return texts.slice(-MESSAGE_LIMIT);
+    return [...latestByText.values()]
+      .sort((left, right) => left.top - right.top || left.left - right.left)
+      .slice(-MESSAGE_LIMIT)
+      .map((record) => record.text);
   }
 
+  function messageRecords(elements, restrictToChatSurface) {
+    const records = [];
+    const panelLeft = root?.getBoundingClientRect?.().left || innerWidth;
+    const chatLeft = Math.min(520, innerWidth * 0.24);
+    for (const element of [...new Set(elements)]) {
+      if (element.closest(`#${ROOT_ID}`) || !isVisibleInViewport(element) || element.childElementCount > 8) continue;
+      const rect = element.getBoundingClientRect();
+      if (restrictToChatSurface) {
+        if (element.childElementCount > 1) continue;
+        if (element.closest('button, a, input, textarea, select, nav, header, [role="button"]')) continue;
+        if (rect.left < chatLeft || rect.right > panelLeft || rect.top < 150 || rect.bottom > innerHeight - 30) continue;
+      }
+      const text = normalizeDisplayText(element.innerText || element.textContent || "");
+      if (!text || text.length > 600 || isInterfaceText(text)) continue;
+      records.push({ text, top: rect.top, left: rect.left });
+    }
+    return records;
+  }
+
+  function isInterfaceText(text) {
+    if (/^\d{1,2}:\d{2}$/.test(text)) return true;
+    if (/^(已讀|傳送|搜尋|全部|待處理|處理完畢|使用手動聊天|預約傳送)$/.test(text)) return true;
+    return text.includes("功能執行中") || text.includes("目前為回應時間內") || text.includes("若希望暫時以手動聊天");
+  }
   function isVisibleInViewport(element) {
     const style = getComputedStyle(element);
     if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) return false;
@@ -298,7 +323,7 @@
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>免審查測試版 v0.1.1</small></div>
+          <div><strong>LINEOA</strong><small>免審查測試版 v0.1.2</small></div>
           <nav aria-label="顯示模式">
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
             <button type="button" data-action="mode" data-mode="${state.mode === "full" ? "side" : "full"}" title="切換全螢幕">${state.mode === "full" ? "▣" : "□"}</button>

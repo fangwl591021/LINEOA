@@ -2,7 +2,7 @@
 
 ## 安裝
 
-1. 解壓縮 `LINEOA-extension-v0.1.1.zip`。
+1. 解壓縮 `LINEOA-extension-v0.1.2.zip`。
 2. 在 Chrome 開啟 `chrome://extensions`。
 3. 開啟右上角「開發人員模式」。
 4. 點選「載入未封裝項目」。

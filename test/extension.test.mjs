@@ -41,6 +41,13 @@ test("content workflow is manual and has three display modes", () => {
   assert.match(styles, /\[data-mode="full"\]/);
 });
 
+test("chat.line.biz has a visible central-chat fallback", () => {
+  assert.match(content, /location\.hostname === "chat\.line\.biz"/);
+  assert.match(content, /document\.querySelectorAll\("p, span, div"\)/);
+  assert.match(content, /rect\.left < chatLeft \|\| rect\.right > panelLeft/);
+  assert.match(content, /element\.closest\('button, a, input, textarea, select, nav, header/);
+  assert.match(content, /isInterfaceText/);
+});
 test("test instructions state the privacy and no-send boundaries", () => {
   assert.match(testing, /不讀取 Cookie、LINE Token/);
   assert.match(testing, /不捲動聊天頁、不填入輸入框、不點擊傳送、不自動發送/);
