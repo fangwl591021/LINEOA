@@ -32,6 +32,18 @@ test/                     契約測試
 
 完整測試與隱私邊界請參考 `extension/TESTING.md`。
 
+## 固定資料夾與一鍵更新
+
+第一次下載 `installer/` 後，雙擊 `Update-LINEOA.cmd`。更新器會把最新版安裝到：
+
+```text
+%LOCALAPPDATA%\LINEOA\Extension
+```
+
+只需第一次在 `chrome://extensions` 載入這個固定資料夾。以後雙擊相同更新器，再對 LINEOA 按「重新載入」，不必移除、換資料夾或重新登入。
+
+完整說明請參考 `installer/README.md`。
+
 ## 部署前
 
 1. 建立 D1：`wrangler d1 create lineoa_saas`
