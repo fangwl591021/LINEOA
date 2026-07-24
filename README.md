@@ -20,6 +20,30 @@ extension/                Manifest V3 Chrome 擴充功能
 test/                     契約測試
 ```
 
+## 免審查測試版安裝
+
+1. 下載並解壓縮 LINEOA 擴充功能測試版。
+2. 開啟 `chrome://extensions`。
+3. 啟用「開發人員模式」。
+4. 點選「載入未封裝項目」，選擇內含 `manifest.json` 的 `extension/` 資料夾。
+5. 開啟 `https://manager.line.biz/`。
+
+選擇帳號並切換至聊天室後，網址會變成 `https://chat.line.biz/`；LINEOA 會繼續載入，不會把使用者帶回帳號目錄。
+
+完整測試與隱私邊界請參考 `extension/TESTING.md`。
+
+## 固定資料夾與一鍵更新
+
+第一次下載 `installer/` 後，雙擊 `Update-LINEOA.cmd`。更新器會把最新版安裝到：
+
+```text
+%LOCALAPPDATA%\LINEOA\Extension
+```
+
+只需第一次在 `chrome://extensions` 載入這個固定資料夾。以後雙擊相同更新器，再對 LINEOA 按「重新載入」，不必移除、換資料夾或重新登入。
+
+完整說明請參考 `installer/README.md`。
+
 ## 部署前
 
 1. 建立 D1：`wrangler d1 create lineoa_saas`
