@@ -1,0 +1,13 @@
+name = "line-oa"
+main = "src/worker.js"
+compatibility_date = "2026-07-24"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "lineoa_saas"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[vars]
+APP_NAME = "LINEPILOT"
+FREE_KNOWLEDGE_LIMIT = "100"
+# ADMIN_EMAILS = "tony@example.com"
