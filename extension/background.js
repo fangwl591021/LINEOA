@@ -1,15 +1,10 @@
 "use strict";
 
 const API_BASE = "https://line-oa.fangwl591021.workers.dev";
-const ADMIN_URL = "https://action.fangwl591021.workers.dev/app/admin.html";
 const TOKEN_KEY = "lineoa_token";
 
 chrome.runtime.onInstalled.addListener(() => {
   console.info("LINEOA test extension installed");
-});
-
-chrome.action.onClicked.addListener(() => {
-  chrome.tabs.create({ url: ADMIN_URL });
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

@@ -103,6 +103,19 @@ test("content script inserts one isolated panel and switches modes without touch
   assert.equal(root.dataset.mode, "float");
   assert.match(root.innerHTML, /lineoa-fab/);
   assert.equal(hostPage.mutations, 0);
+
+  await listeners.get("click")({
+    target: {
+      closest() {
+        return { dataset: { action: "mode", mode: "full" } };
+      }
+    }
+  });
+  assert.equal(root.dataset.mode, "full");
+  assert.match(root.innerHTML, /lineoa-admin-sidebar/);
+  assert.match(root.innerHTML, /工作總覽/);
+  assert.match(root.innerHTML, /聊天室監控/);
+  assert.equal(hostPage.mutations, 0);
 });
 
 test("chat.line.biz fallback reads central visible bubbles and excludes the left account list", async () => {

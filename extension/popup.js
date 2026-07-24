@@ -2,7 +2,7 @@
 
 const MANAGER_URL = "https://manager.line.biz/";
 const CHAT_URL = "https://chat.line.biz/";
-const APP_URL = "https://action.fangwl591021.workers.dev/app/admin.html";
+const APP_URL = "https://line-oa.fangwl591021.workers.dev/app";
 const primaryButton = document.getElementById("open-manager");
 
 chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
