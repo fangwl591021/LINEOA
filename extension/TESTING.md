@@ -2,7 +2,7 @@
 
 ## 安裝
 
-1. 解壓縮 `LINEOA-extension-v0.1.3.zip`。
+1. 解壓縮 `LINEOA-extension-v0.1.4.zip`。
 2. 在 Chrome 開啟 `chrome://extensions`。
 3. 開啟右上角「開發人員模式」。
 4. 點選「載入未封裝項目」。
@@ -26,7 +26,7 @@
 - 不讀取 Cookie、LINE Token 或 LINE Authorization Header。
 - 不捲動聊天頁、不填入輸入框、不點擊傳送、不自動發送。
 - LINEOA 登入權杖只保存在 Chrome 擴充功能自己的儲存空間。
-- 點擊 Chrome 工具列的 LINEOA 圖示會開啟 ACTION 管理後台；聊天室監控預設縮成右側懸浮按鈕。
+- 切換為全版時顯示 ACTION 風格的 LINEOA 管理介面；聊天室監控是其中一個功能頁。
 
 ## 更新
 

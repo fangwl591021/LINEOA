@@ -8,6 +8,7 @@
   const MESSAGE_LIMIT = 5;
   const state = {
     mode: "float",
+    adminView: "overview",
     authMode: "login",
     user: null,
     limits: null,
@@ -73,6 +74,12 @@
       const action = button.dataset.action;
 
       if (action === "mode") return setMode(button.dataset.mode);
+      if (action === "admin-view") {
+        state.adminView = ["overview", "monitor", "knowledge", "account"].includes(button.dataset.view)
+          ? button.dataset.view
+          : "overview";
+        return render();
+      }
       if (action === "auth-mode") {
         state.authMode = button.dataset.mode === "register" ? "register" : "login";
         state.notice = "";
@@ -326,19 +333,184 @@
       return;
     }
 
+    if (state.mode === "full") {
+      root.innerHTML = fullAdminView();
+      return;
+    }
+
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.3</small></div>
+          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.4</small></div>
           <nav aria-label="顯示模式">
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
-            <button type="button" data-action="mode" data-mode="${state.mode === "full" ? "side" : "full"}" title="切換全螢幕">${state.mode === "full" ? "▣" : "□"}</button>
+            <button type="button" data-action="mode" data-mode="full" title="開啟管理全版">□</button>
           </nav>
         </header>
         <div class="lineoa-body">
           ${state.loading ? loadingView() : state.user ? workspaceView() : authView()}
         </div>
       </section>`;
+  }
+
+  function fullAdminView() {
+    const titles = {
+      overview: "工作總覽",
+      monitor: "聊天室監控",
+      knowledge: "知識庫",
+      account: "帳戶方案"
+    };
+    const title = titles[state.adminView] || titles.overview;
+    const current = state.usage?.current || state.knowledge.length || 0;
+    const limit = state.usage?.limit || state.limits?.knowledgeItems || 100;
+    const navItem = (view, icon, label) => `
+      <button type="button" class="lineoa-admin-nav-item ${state.adminView === view ? "active" : ""}" data-action="admin-view" data-view="${view}">
+        <span>${icon}</span><strong>${label}</strong>
+      </button>`;
+
+    return `
+      <section class="lineoa-admin-shell" aria-live="polite">
+        <aside class="lineoa-admin-sidebar">
+          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.4</small></div></div>
+          <nav>
+            <div class="lineoa-admin-group">📦 服務中心</div>
+            ${navItem("overview", "▦", "工作總覽")}
+            ${navItem("monitor", "◉", "聊天室監控")}
+            <div class="lineoa-admin-group">🛠️ 管理工具</div>
+            ${navItem("knowledge", "▤", "知識庫")}
+            ${navItem("account", "◎", "帳戶方案")}
+          </nav>
+          <div class="lineoa-admin-sidebar-footer">
+            ${state.user ? `<strong>${escapeHtml(state.user.displayName || state.user.email)}</strong><small>免費版 · ${current}/${limit} 筆知識</small><button type="button" data-action="logout">安全登出</button>` : "<small>請先登入 LINEOA</small>"}
+          </div>
+        </aside>
+        <main class="lineoa-admin-main">
+          <header class="lineoa-admin-header">
+            <div><h2>${title}</h2><p>LINEOA 客服營運管理</p></div>
+            <div class="lineoa-admin-header-actions">
+              <span class="lineoa-channel-status"><i></i>通道正常</span>
+              <button type="button" data-action="sync" ${state.user ? "" : "disabled"}>重新同步</button>
+              <button type="button" data-action="mode" data-mode="side" title="回到側邊監控">縮小</button>
+              <button type="button" data-action="mode" data-mode="float" title="收合">×</button>
+            </div>
+          </header>
+          <div class="lineoa-admin-content">
+            ${state.loading ? loadingView() : state.user ? fullAdminContent(current, limit) : fullAdminLogin()}
+          </div>
+        </main>
+      </section>`;
+  }
+
+  function fullAdminLogin() {
+    return `
+      <div class="lineoa-admin-login">
+        <div class="lineoa-admin-login-card">
+          <span class="lineoa-admin-login-icon">LO</span>
+          ${authView()}
+        </div>
+      </div>`;
+  }
+
+  function fullAdminContent(current, limit) {
+    if (state.adminView === "monitor") return fullMonitorView();
+    if (state.adminView === "knowledge") return fullKnowledgeView(current, limit);
+    if (state.adminView === "account") return fullAccountView(current, limit);
+    return fullOverviewView(current, limit);
+  }
+
+  function fullOverviewView(current, limit) {
+    return `
+      <div class="lineoa-admin-stats">
+        ${statCard("知識庫用量", `${current} / ${limit}`, "免費方案上限")}
+        ${statCard("目前對話", state.messages.length, "已讀取可見訊息")}
+        ${statCard("建議回覆", state.suggestions.length, "本次比對結果")}
+        ${statCard("服務狀態", "正常", "LINEOA API 已連線", "green")}
+      </div>
+      ${noticeView()}
+      <div class="lineoa-admin-grid">
+        <section class="lineoa-admin-card">
+          <div class="lineoa-admin-card-title"><div><h3>聊天室監控</h3><p>手動讀取目前可見對話並與知識庫比對</p></div><span>客服工具</span></div>
+          <div class="lineoa-admin-quick">
+            <button class="lineoa-primary" type="button" data-action="admin-view" data-view="monitor">進入聊天室監控</button>
+            <button type="button" data-action="scan">立即讀取並比對</button>
+          </div>
+        </section>
+        <section class="lineoa-admin-card">
+          <div class="lineoa-admin-card-title"><div><h3>知識庫</h3><p>管理客服問答與建議回覆內容</p></div><span>${current} 筆</span></div>
+          <div class="lineoa-admin-quick">
+            <button class="lineoa-primary" type="button" data-action="admin-view" data-view="knowledge">查看知識庫</button>
+            <button type="button" data-action="sync">同步最新資料</button>
+          </div>
+        </section>
+      </div>
+      <section class="lineoa-admin-card lineoa-admin-activity">
+        <div class="lineoa-admin-card-title"><div><h3>使用說明</h3><p>LINEOA 僅在你操作時執行</p></div></div>
+        <div class="lineoa-admin-table-row"><strong>隱私保護</strong><span>不讀取 Cookie、LINE Token，也不會自動發送訊息</span><em>安全</em></div>
+        <div class="lineoa-admin-table-row"><strong>聊天室監控</strong><span>只讀取目前畫面中可見的對話文字</span><em>手動</em></div>
+      </section>`;
+  }
+
+  function fullMonitorView() {
+    return `
+      <div class="lineoa-admin-toolbar">
+        <div><strong>客服對話分析</strong><span>讀取目前聊天室可見訊息，於本機比對知識庫</span></div>
+        <div><button type="button" data-action="sync">同步知識庫</button><button class="lineoa-primary" type="button" data-action="scan">讀取目前可見對話並比對</button></div>
+      </div>
+      ${noticeView()}
+      <div class="lineoa-monitor-layout">
+        <section class="lineoa-admin-card">
+          <div class="lineoa-admin-card-title"><div><h3>目前可見文字</h3><p>最多顯示 ${MESSAGE_LIMIT} 則</p></div><span>${state.messages.length}/${MESSAGE_LIMIT}</span></div>
+          ${state.messages.length ? `<ol class="lineoa-messages">${state.messages.map((message) => `<li>${escapeHtml(message)}</li>`).join("")}</ol>` : emptyCard("尚未讀取對話")}
+        </section>
+        <section class="lineoa-admin-card">
+          <div class="lineoa-admin-card-title"><div><h3>建議回覆</h3><p>依知識庫相似度排序</p></div><span>${state.suggestions.length}</span></div>
+          ${state.suggestions.length ? state.suggestions.map((item, index) => suggestionCard(item, index)).join("") : emptyCard(state.messages.length ? "知識庫中沒有相近答案" : "讀取對話後顯示建議")}
+        </section>
+      </div>
+      <div class="lineoa-privacy-note">只有你按下按鈕時，才會讀取畫面目前可見文字；比對在瀏覽器內完成，不會自動發送。</div>`;
+  }
+
+  function fullKnowledgeView(current, limit) {
+    return `
+      <div class="lineoa-admin-toolbar">
+        <div><strong>知識庫內容</strong><span>免費版 ${current}/${limit} 筆</span></div>
+        <div><button type="button" data-action="sync">同步知識庫</button><a href="https://line-oa.fangwl591021.workers.dev/app" target="_blank" rel="noreferrer">新增與編輯</a></div>
+      </div>
+      ${noticeView()}
+      <section class="lineoa-admin-card lineoa-knowledge-table">
+        <div class="lineoa-knowledge-head"><span>分類</span><span>問題</span><span>答案</span></div>
+        ${state.knowledge.length ? state.knowledge.map((item) => `
+          <div class="lineoa-knowledge-row"><span>${escapeHtml(item.category || "未分類")}</span><strong>${escapeHtml(item.question)}</strong><p>${escapeHtml(item.answer)}</p></div>`).join("") : emptyCard("目前沒有知識內容")}
+      </section>`;
+  }
+
+  function fullAccountView(current, limit) {
+    const percentage = Math.min(100, Math.round((current / Math.max(limit, 1)) * 100));
+    return `
+      <div class="lineoa-admin-grid">
+        <section class="lineoa-admin-card">
+          <div class="lineoa-admin-card-title"><div><h3>帳戶資料</h3><p>目前登入的 LINEOA 帳戶</p></div><span>已登入</span></div>
+          <dl class="lineoa-account-details">
+            <div><dt>顯示名稱</dt><dd>${escapeHtml(state.user.displayName || "-")}</dd></div>
+            <div><dt>Email</dt><dd>${escapeHtml(state.user.email || "-")}</dd></div>
+            <div><dt>方案</dt><dd>免費版</dd></div>
+          </dl>
+        </section>
+        <section class="lineoa-admin-card">
+          <div class="lineoa-admin-card-title"><div><h3>知識庫額度</h3><p>免費方案最多 ${limit} 筆</p></div><span>${percentage}%</span></div>
+          <div class="lineoa-quota"><i style="width:${percentage}%"></i></div>
+          <strong class="lineoa-quota-label">${current} / ${limit} 筆</strong>
+        </section>
+      </div>
+      <section class="lineoa-admin-card">
+        <div class="lineoa-admin-card-title"><div><h3>安全與隱私</h3><p>擴充功能資料邊界</p></div></div>
+        <div class="lineoa-admin-table-row"><strong>登入權杖</strong><span>只保存在 Chrome 擴充功能自己的儲存空間</span><em>本機</em></div>
+        <div class="lineoa-admin-table-row"><strong>LINE 資料</strong><span>不讀取 Cookie 或 LINE Token</span><em>不存取</em></div>
+      </section>`;
+  }
+
+  function statCard(label, value, note, tone = "") {
+    return `<article class="lineoa-stat-card ${tone}"><span>${label}</span><strong>${escapeHtml(value)}</strong><small>${note}</small></article>`;
   }
 
   function loadingView() {
@@ -388,7 +560,7 @@
         <h3>建議回覆 <span>${state.suggestions.length}</span></h3>
         ${state.suggestions.length ? state.suggestions.map((item, index) => suggestionCard(item, index)).join("") : emptyCard(state.messages.length ? "知識庫中沒有相近答案" : "讀取對話後顯示建議")}
       </section>
-      <a class="lineoa-manage" href="https://action.fangwl591021.workers.dev/app/admin.html" target="_blank" rel="noreferrer">開啟 LINEOA 管理後台 ↗</a>`;
+      <a class="lineoa-manage" href="https://line-oa.fangwl591021.workers.dev/app" target="_blank" rel="noreferrer">管理我的知識庫 ↗</a>`;
   }
 
   function suggestionCard(item, index) {
