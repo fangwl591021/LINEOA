@@ -14,6 +14,9 @@ test("free plan contract is present", () => {
 
 test("production auth constraints are enforced", () => {
   assert.match(worker, /url\.pathname === "\/admin"[\s\S]*await requireAdmin\(request, env\)/);
+  assert.match(worker, /return await register\(request, env, cors\)/);
+  assert.match(worker, /return await login\(request, env, cors\)/);
+  assert.match(worker, /return await saveKnowledge\(request, env, cors, auth\.user\)/);
   const iterations = worker.match(/iterations:\s*(\d+)/);
   assert.ok(iterations);
   assert.equal(Number(iterations[1]), 100000);

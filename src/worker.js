@@ -13,10 +13,10 @@ export default {
         return json({ ok: true, service: "linepilot-saas", version: "0.1.0" }, 200, cors);
       }
       if (url.pathname === "/api/auth/register" && request.method === "POST") {
-        return register(request, env, cors);
+        return await register(request, env, cors);
       }
       if (url.pathname === "/api/auth/login" && request.method === "POST") {
-        return login(request, env, cors);
+        return await login(request, env, cors);
       }
       if (url.pathname === "/api/auth/me" && request.method === "GET") {
         const auth = await requireUser(request, env);
@@ -42,7 +42,7 @@ export default {
       }
       if (url.pathname === "/api/knowledge" && request.method === "POST") {
         const auth = await requireUser(request, env);
-        return saveKnowledge(request, env, cors, auth.user);
+        return await saveKnowledge(request, env, cors, auth.user);
       }
       if (url.pathname.startsWith("/api/knowledge/") && request.method === "DELETE") {
         const auth = await requireUser(request, env);
