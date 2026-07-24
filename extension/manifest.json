@@ -1,16 +1,15 @@
 {
   "manifest_version": 3,
   "name": "LINEOA 測試版",
-  "version": "0.1.2",
-  "description": "在 LINE Official Account Manager 顯示知識庫回覆建議；不會自動發送訊息。",
-  "permissions": ["storage", "activeTab"],
+  "version": "0.1.3",
+  "description": "開啟 LINEOA 管理後台，並在 LINE Official Account Manager 提供聊天室監控與知識庫回覆建議。",
+  "permissions": ["storage"],
   "host_permissions": ["https://line-oa.fangwl591021.workers.dev/*"],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "LINEOA",
-    "default_popup": "popup.html"
+    "default_title": "開啟 LINEOA 管理後台"
   },
   "content_scripts": [
     {
