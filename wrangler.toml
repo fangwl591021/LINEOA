@@ -8,6 +8,6 @@ database_name = "lineoa_saas"
 database_id = "9dbd775a-afa2-4eb5-b50a-a10d91e2514b"
 
 [vars]
-APP_NAME = "LINEPILOT"
+APP_NAME = "LINEOA"
 FREE_KNOWLEDGE_LIMIT = "100"
 # ADMIN_EMAILS = "tony@example.com"

@@ -1,6 +1,6 @@
-# LINEPILOT SaaS
+# LINEOA SaaS
 
-LINEPILOT 是以 Chrome 擴充功能作為工作入口的 LINE OA 客服輔助平台。
+LINEOA 是以 Chrome 擴充功能作為工作入口的 LINE OA 客服輔助平台。
 
 第一階段免費版：
 
