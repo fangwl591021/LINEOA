@@ -90,6 +90,15 @@
         state.adminGroups[group] = !state.adminGroups[group];
         return render();
       }
+      if (action === "open-rich-menu") {
+        try {
+          await send({ type: "lineoa:rich-menu:open" });
+          state.notice = "已開啟圖文選單編輯器";
+        } catch (error) {
+          state.notice = error.message;
+        }
+        return render();
+      }
       if (action === "open-settings") {
         try {
           await send({ type: "lineoa:settings:open" });
@@ -471,7 +480,7 @@
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.7</small></div>
+          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.8</small></div>
           <nav aria-label="顯示模式">
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
             <button type="button" data-action="mode" data-mode="full" title="開啟管理全版">□</button>
@@ -506,7 +515,7 @@
     return `
       <section class="lineoa-admin-shell" aria-live="polite">
         <aside class="lineoa-admin-sidebar">
-          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.7</small></div></div>
+          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.8</small></div></div>
           <nav>
             ${groupHeader("service", "📦", "服務中心")}
             ${state.adminGroups.service ? `
@@ -571,6 +580,10 @@
         <section class="lineoa-admin-card">
           <div class="lineoa-admin-card-title"><div><h3>LINE Messaging API</h3><p>官方帳號機器人與訊息 API</p></div><span>2 項參數</span></div>
           <div class="lineoa-settings-field-list"><span>LINE Bot Channel access token</span><span>LINE Bot Channel secret</span></div>
+        </section>
+        <section class="lineoa-admin-card">
+          <div class="lineoa-admin-card-title"><div><h3>圖文選單上傳</h3><p>上傳底圖、劃定區域並部署至 LINE</p></div><span>30 天試用</span></div>
+          <div class="lineoa-admin-quick"><button class="lineoa-primary" type="button" data-action="open-rich-menu">開啟圖文選單編輯器</button><small>試用後 NT$199／年</small></div>
         </section>
       </div>
       <section class="lineoa-admin-card">

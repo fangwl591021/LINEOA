@@ -1,3 +1,5 @@
+import { handleRichMenuMessage, isRichMenuMessage } from "./rich-menu-background.js";
+
 "use strict";
 
 const API_BASE = "https://line-oa.fangwl591021.workers.dev";
@@ -14,7 +16,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  handleMessage(message, sender)
+  const operation = isRichMenuMessage(message)
+    ? handleRichMenuMessage(message, sender)
+    : handleMessage(message, sender);
+  operation
     .then(sendResponse)
     .catch((error) => sendResponse({ ok: false, message: error.message || "擴充功能暫時無法處理" }));
   return true;
