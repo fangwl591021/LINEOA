@@ -163,13 +163,18 @@ function renderAreas() {
     select.value = area.action.type;
     configureAreaInputs(card, area);
     valueInput.value = actionValue(area.action);
-    displayInput.value = area.action.displayText || "";
+    displayInput.value = area.action.type === "richmenuswitch"
+      ? area.action.data || ""
+      : area.action.displayText || "";
     select.addEventListener("change", () => {
       area.action = defaultAction(select.value);
       renderAreas();
     });
     valueInput.addEventListener("input", () => setActionValue(area.action, valueInput.value));
-    displayInput.addEventListener("input", () => area.action.displayText = displayInput.value);
+    displayInput.addEventListener("input", () => {
+      if (area.action.type === "richmenuswitch") area.action.data = displayInput.value;
+      else area.action.displayText = displayInput.value;
+    });
     card.querySelector("[data-remove]").addEventListener("click", () => {
       state.areas.splice(index, 1);
       render();
@@ -187,9 +192,16 @@ function configureAreaInputs(card, area) {
   } else if (area.action.type === "message") {
     label.childNodes[0].textContent = "傳送文字";
     label.querySelector("input").placeholder = "點擊後傳送的文字";
-  } else {
+  } else if (area.action.type === "postback") {
     label.childNodes[0].textContent = "Postback Data";
     label.querySelector("input").placeholder = "action=menu";
+    display.classList.remove("hidden");
+  } else {
+    label.childNodes[0].textContent = "目標選單 Alias ID";
+    label.querySelector("input").placeholder = "richmenu-alias-b";
+    label.querySelector("input").maxLength = 32;
+    display.childNodes[0].textContent = "切換資料 Data";
+    display.querySelector("input").placeholder = "action=richmenu-switch";
     display.classList.remove("hidden");
   }
 }
@@ -220,6 +232,15 @@ function buildPayload() {
   for (let index = 0; index < state.areas.length; index += 1) {
     const action = state.areas[index].action;
     const value = actionValue(action).trim();
+    if (action.type === "richmenuswitch") {
+      if (!/^[a-z0-9_-]{1,32}$/.test(value)) {
+        return setNotice(`區域 #${index + 1} 的 Alias ID 格式不正確。`, "error");
+      }
+      if (!String(action.data || "").trim()) {
+        return setNotice(`區域 #${index + 1} 的切換資料 Data 不可空白。`, "error");
+      }
+      continue;
+    }
     if (!value || (action.type === "uri" && !/^https?:\/\//i.test(value))) {
       return setNotice(`區域 #${index + 1} 的動作內容不正確。`, "error");
     }
@@ -289,12 +310,17 @@ function normalizeRect(start, end) {
 function defaultAction(type) {
   if (type === "message") return { type, text: "" };
   if (type === "postback") return { type, data: "", displayText: "" };
+  if (type === "richmenuswitch") return { type, richMenuAliasId: "", data: "" };
   return { type: "uri", uri: "https://" };
 }
-function actionValue(action) { return action.uri ?? action.text ?? action.data ?? ""; }
+function actionValue(action) {
+  if (action.type === "richmenuswitch") return action.richMenuAliasId || "";
+  return action.uri ?? action.text ?? action.data ?? "";
+}
 function setActionValue(action, value) {
   if (action.type === "uri") action.uri = value;
   else if (action.type === "message") action.text = value;
+  else if (action.type === "richmenuswitch") action.richMenuAliasId = value;
   else action.data = value;
 }
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
