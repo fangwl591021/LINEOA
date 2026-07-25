@@ -1,0 +1,237 @@
+:root {
+  color: #334155;
+  font-family: Inter, "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: #f8fafc;
+  margin: 0;
+  min-height: 100vh;
+}
+
+.settings-sidebar {
+  background: #fff;
+  border-right: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  left: 0;
+  padding-bottom: 20px;
+  position: fixed;
+  top: 0;
+  width: 240px;
+}
+
+.brand {
+  align-items: center;
+  color: #06c755;
+  display: flex;
+  gap: 11px;
+  padding: 24px;
+}
+
+.brand > span {
+  align-items: center;
+  background: #06c755;
+  border-radius: 9px;
+  color: #fff;
+  display: flex;
+  font-size: 11px;
+  font-weight: 900;
+  height: 40px;
+  justify-content: center;
+  width: 40px;
+}
+
+.brand > div { display: grid; }
+.brand strong { font-size: 21px; }
+.brand small { color: #94a3b8; font-size: 10px; }
+
+.settings-sidebar nav { flex: 1; }
+
+.settings-sidebar a {
+  border-right: 4px solid transparent;
+  color: #64748b;
+  display: block;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 14px 24px;
+  text-decoration: none;
+}
+
+.settings-sidebar a:hover {
+  background: #f0fdf4;
+  border-right-color: #06c755;
+  color: #06c755;
+}
+
+.settings-sidebar > p {
+  color: #94a3b8;
+  font-size: 11px;
+  margin: 0;
+  padding: 16px 24px;
+}
+
+main {
+  margin-left: 240px;
+  min-height: 100vh;
+}
+
+header {
+  align-items: center;
+  background: #fff;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  justify-content: space-between;
+  padding: 18px 28px;
+}
+
+h1 { color: #1e293b; font-size: 24px; margin: 0; }
+header p { color: #94a3b8; font-size: 12px; margin: 3px 0 0; }
+
+.private-badge {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  color: #15803d;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 8px 12px;
+}
+
+form {
+  margin: 0 auto;
+  max-width: 900px;
+  padding: 26px;
+}
+
+.status {
+  background: #eff6ff;
+  border-left: 4px solid #3b82f6;
+  border-radius: 7px;
+  color: #1d4ed8;
+  margin-bottom: 18px;
+  padding: 11px 14px;
+}
+
+.status.success {
+  background: #f0fdf4;
+  border-left-color: #06c755;
+  color: #15803d;
+}
+
+.status.error {
+  background: #fef2f2;
+  border-left-color: #ef4444;
+  color: #b91c1c;
+}
+
+details {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+
+summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  list-style: none;
+  padding: 19px 22px;
+}
+
+summary::-webkit-details-marker { display: none; }
+summary > span { display: grid; }
+summary b { color: #1e293b; font-size: 16px; }
+summary small { color: #94a3b8; margin-top: 2px; }
+summary i { color: #06c755; font-size: 20px; font-style: normal; transition: transform .2s; }
+details:not([open]) summary i { transform: rotate(-90deg); }
+
+.fields {
+  border-top: 1px solid #f1f5f9;
+  display: grid;
+  gap: 20px;
+  padding: 22px;
+}
+
+label {
+  color: #1e293b;
+  display: grid;
+  font-size: 14px;
+  font-weight: 800;
+  gap: 7px;
+}
+
+label > small {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+input,
+textarea {
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  color: #1e293b;
+  font: inherit;
+  font-weight: 600;
+  outline: none;
+  padding: 12px 14px;
+  resize: vertical;
+  width: 100%;
+}
+
+input:focus,
+textarea:focus {
+  border-color: #06c755;
+  box-shadow: 0 0 0 3px rgba(6, 199, 85, .1);
+}
+
+.security-note {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #06c755;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  padding: 14px 16px;
+}
+
+.security-note p { color: #64748b; margin: 4px 0 0; }
+
+.actions {
+  display: flex;
+  justify-content: space-between;
+}
+
+button {
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  padding: 11px 18px;
+}
+
+button.primary {
+  background: #06c755;
+  border: 1px solid #06c755;
+  color: #fff;
+}
+
+button.danger {
+  background: #fff;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+}
+
+@media (max-width: 720px) {
+  .settings-sidebar { display: none; }
+  main { margin-left: 0; }
+  header { align-items: flex-start; gap: 12px; }
+  form { padding: 16px; }
+}

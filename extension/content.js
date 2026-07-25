@@ -9,6 +9,7 @@
   const state = {
     mode: "float",
     adminView: "overview",
+    adminGroups: { service: true, tools: true },
     authMode: "login",
     user: null,
     limits: null,
@@ -78,9 +79,24 @@
 
       if (action === "mode") return setMode(button.dataset.mode);
       if (action === "admin-view") {
-        state.adminView = ["overview", "monitor", "knowledge", "account"].includes(button.dataset.view)
+        state.adminView = ["overview", "monitor", "knowledge", "account", "settings"].includes(button.dataset.view)
           ? button.dataset.view
           : "overview";
+        return render();
+      }
+      if (action === "toggle-admin-group") {
+        const group = button.dataset.group;
+        if (!["service", "tools"].includes(group)) return;
+        state.adminGroups[group] = !state.adminGroups[group];
+        return render();
+      }
+      if (action === "open-settings") {
+        try {
+          await send({ type: "lineoa:settings:open" });
+          state.notice = "已開啟擴充功能私有串接設定頁";
+        } catch (error) {
+          state.notice = error.message;
+        }
         return render();
       }
       if (action === "auth-mode") {
@@ -455,7 +471,7 @@
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.5</small></div>
+          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.6</small></div>
           <nav aria-label="顯示模式">
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
             <button type="button" data-action="mode" data-mode="full" title="開啟管理全版">□</button>
@@ -472,7 +488,8 @@
       overview: "工作總覽",
       monitor: "聊天室監控",
       knowledge: "知識庫",
-      account: "帳戶方案"
+      account: "帳戶方案",
+      settings: "串接設定"
     };
     const title = titles[state.adminView] || titles.overview;
     const current = state.usage?.current || state.knowledge.length || 0;
@@ -481,18 +498,25 @@
       <button type="button" class="lineoa-admin-nav-item ${state.adminView === view ? "active" : ""}" data-action="admin-view" data-view="${view}">
         <span>${icon}</span><strong>${label}</strong>
       </button>`;
+    const groupHeader = (group, icon, label) => `
+      <button type="button" class="lineoa-admin-group" data-action="toggle-admin-group" data-group="${group}" aria-expanded="${state.adminGroups[group]}">
+        <span>${icon} ${label}</span><i>${state.adminGroups[group] ? "⌄" : "›"}</i>
+      </button>`;
 
     return `
       <section class="lineoa-admin-shell" aria-live="polite">
         <aside class="lineoa-admin-sidebar">
-          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.5</small></div></div>
+          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.6</small></div></div>
           <nav>
-            <div class="lineoa-admin-group">📦 服務中心</div>
-            ${navItem("overview", "▦", "工作總覽")}
-            ${navItem("monitor", "◉", "聊天室監控")}
-            <div class="lineoa-admin-group">🛠️ 管理工具</div>
-            ${navItem("knowledge", "▤", "知識庫")}
-            ${navItem("account", "◎", "帳戶方案")}
+            ${groupHeader("service", "📦", "服務中心")}
+            ${state.adminGroups.service ? `
+              ${navItem("overview", "▦", "工作總覽")}
+              ${navItem("monitor", "◉", "聊天室監控")}` : ""}
+            ${groupHeader("tools", "🛠️", "管理工具")}
+            ${state.adminGroups.tools ? `
+              ${navItem("knowledge", "▤", "知識庫")}
+              ${navItem("account", "◎", "帳戶方案")}
+              ${navItem("settings", "⚙", "串接設定")}` : ""}
           </nav>
           <div class="lineoa-admin-sidebar-footer">
             ${state.user ? `<strong>${escapeHtml(state.user.displayName || state.user.email)}</strong><small>免費版 · ${current}/${limit} 筆知識</small><button type="button" data-action="logout">安全登出</button>` : "<small>請先登入 LINEOA</small>"}
@@ -509,7 +533,7 @@
             </div>
           </header>
           <div class="lineoa-admin-content">
-            ${state.loading ? loadingView() : state.user ? fullAdminContent(current, limit) : fullAdminLogin()}
+            ${state.loading ? loadingView() : state.adminView === "settings" ? fullSettingsView() : state.user ? fullAdminContent(current, limit) : fullAdminLogin()}
           </div>
         </main>
       </section>`;
@@ -529,7 +553,30 @@
     if (state.adminView === "monitor") return fullMonitorView();
     if (state.adminView === "knowledge") return fullKnowledgeView(current, limit);
     if (state.adminView === "account") return fullAccountView(current, limit);
+    if (state.adminView === "settings") return fullSettingsView();
     return fullOverviewView(current, limit);
+  }
+
+  function fullSettingsView() {
+    return `
+      <div class="lineoa-admin-settings-intro">
+        <div><span>⚙</span><div><h3>LINE API 串接設定</h3><p>填寫使用者自己的 LINE Login 與 Messaging API 參數</p></div></div>
+        <button class="lineoa-primary" type="button" data-action="open-settings">開啟安全設定頁</button>
+      </div>
+      <div class="lineoa-admin-grid">
+        <section class="lineoa-admin-card">
+          <div class="lineoa-admin-card-title"><div><h3>LINE Login API</h3><p>會員登入與授權</p></div><span>2 項參數</span></div>
+          <div class="lineoa-settings-field-list"><span>LINE Login Channel ID</span><span>LINE Login Channel secret</span></div>
+        </section>
+        <section class="lineoa-admin-card">
+          <div class="lineoa-admin-card-title"><div><h3>LINE Messaging API</h3><p>官方帳號機器人與訊息 API</p></div><span>2 項參數</span></div>
+          <div class="lineoa-settings-field-list"><span>LINE Bot Channel access token</span><span>LINE Bot Channel secret</span></div>
+        </section>
+      </div>
+      <section class="lineoa-admin-card">
+        <div class="lineoa-admin-table-row"><strong>憑證保護</strong><span>設定表單位於 Chrome 擴充功能私有頁面，不放入 LINE 聊天頁 DOM</span><em>安全</em></div>
+        <div class="lineoa-admin-table-row"><strong>目前行為</strong><span>此版本只安全保管參數，不會自動發送 LINE 訊息</span><em>不傳送</em></div>
+      </section>`;
   }
 
   function fullOverviewView(current, limit) {

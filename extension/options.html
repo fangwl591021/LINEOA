@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LINEOA 串接設定</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <aside class="settings-sidebar">
+    <div class="brand"><span>LO</span><div><strong>LINEOA</strong><small>私有串接設定</small></div></div>
+    <nav>
+      <a href="#line-login">LINE Login API</a>
+      <a href="#line-bot">LINE Messaging API</a>
+    </nav>
+    <p>設定只保存在這個 Chrome 使用者的擴充功能儲存空間。</p>
+  </aside>
+
+  <main>
+    <header>
+      <div><h1>串接 API 設定</h1><p>填寫自己的 LINE Developers 參數</p></div>
+      <span class="private-badge">擴充功能私有頁面</span>
+    </header>
+
+    <form id="integration-form" autocomplete="off">
+      <div id="status" class="status" role="status" aria-live="polite">正在讀取設定狀態…</div>
+
+      <details id="line-login" open>
+        <summary><span><b>LINE Login API</b><small>會員登入與授權</small></span><i>⌄</i></summary>
+        <div class="fields">
+          <label>
+            <span>LINE Login Channel ID</span>
+            <input id="line-login-channel-id" name="lineLoginChannelId" inputmode="numeric" maxlength="80" placeholder="例如：2001234567">
+          </label>
+          <label>
+            <span>LINE Login Channel secret</span>
+            <input id="line-login-channel-secret" name="lineLoginChannelSecret" type="password" maxlength="200" placeholder="留空會保留已儲存的 secret">
+            <small id="line-login-secret-state">尚未設定</small>
+          </label>
+        </div>
+      </details>
+
+      <details id="line-bot" open>
+        <summary><span><b>LINE Messaging API</b><small>官方帳號機器人與訊息 API</small></span><i>⌄</i></summary>
+        <div class="fields">
+          <label>
+            <span>LINE Bot Channel access token</span>
+            <textarea id="line-bot-access-token" name="lineBotChannelAccessToken" rows="4" maxlength="5000" placeholder="留空會保留已儲存的 access token"></textarea>
+            <small id="line-bot-token-state">尚未設定</small>
+          </label>
+          <label>
+            <span>LINE Bot Channel secret</span>
+            <input id="line-bot-channel-secret" name="lineBotChannelSecret" type="password" maxlength="200" placeholder="留空會保留已儲存的 secret">
+            <small id="line-bot-secret-state">尚未設定</small>
+          </label>
+        </div>
+      </details>
+
+      <section class="security-note">
+        <strong>安全說明</strong>
+        <p>既有 secret/token 不會回填到表單，也不會出現在紀錄中。此版本只提供安全保管與設定入口，不會自動傳送 LINE 訊息。</p>
+      </section>
+
+      <div class="actions">
+        <button id="clear-settings" class="danger" type="button">清除所有串接參數</button>
+        <button class="primary" type="submit">儲存設定</button>
+      </div>
+    </form>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>
