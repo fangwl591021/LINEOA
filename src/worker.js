@@ -14,7 +14,7 @@ export default {
       const richMenuResponse = await handleRichMenuFeature(request, env, url, cors);
       if (richMenuResponse) return richMenuResponse;
       if (url.pathname === "/health") {
-        return json({ ok: true, service: "lineoa-saas", version: "0.1.1" }, 200, cors);
+        return json({ ok: true, service: "lineoa-saas", version: "0.1.2" }, 200, cors);
       }
       if (url.pathname === "/api/auth/register" && request.method === "POST") {
         return await register(request, env, cors);
@@ -55,6 +55,19 @@ export default {
           .bind(id, auth.user.id).run();
         await audit(env, auth.user.id, "knowledge.delete", id);
         return json({ ok: true }, 200, cors);
+      }
+      if (url.pathname === "/api/crm/contacts" && request.method === "GET") {
+        const auth = await requireUser(request, env);
+        return await listCrmContacts(env, cors, auth.user);
+      }
+      if (url.pathname === "/api/crm/contacts/upsert" && request.method === "POST") {
+        const auth = await requireUser(request, env);
+        return await upsertCrmContact(request, env, cors, auth.user);
+      }
+      if (url.pathname.startsWith("/api/crm/contacts/") && request.method === "PATCH") {
+        const auth = await requireUser(request, env);
+        const id = decodeURIComponent(url.pathname.slice("/api/crm/contacts/".length));
+        return await updateCrmContact(request, env, cors, auth.user, id);
       }
       if (url.pathname === "/api/admin/summary" && request.method === "GET") {
         const auth = await requireAdmin(request, env);
@@ -197,6 +210,124 @@ async function saveKnowledge(request, env, cors, user) {
   await audit(env, user.id, "knowledge.save", String(normalized.length));
   const total = await env.DB.prepare("SELECT COUNT(*) total FROM knowledge_items WHERE user_id = ?").bind(user.id).first();
   return json({ ok: true, saved: normalized.length, usage: { current: Number(total?.total || 0), limit } }, 200, cors);
+}
+
+async function listCrmContacts(env, cors, user) {
+  const rows = await env.DB.prepare(`
+    SELECT id, line_uid, display_name, avatar_url, phone, email, tags_json, notes,
+           status, source, first_seen_at, last_seen_at, last_chat_at, created_at, updated_at
+    FROM crm_contacts
+    WHERE user_id = ?
+    ORDER BY last_seen_at DESC
+    LIMIT 1000
+  `).bind(user.id).all();
+  const contacts = (rows.results || []).map(publicCrmContact);
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+  return json({
+    ok: true,
+    contacts,
+    summary: {
+      total: contacts.length,
+      newThisMonth: contacts.filter((item) => Date.parse(item.createdAt) >= monthStart.getTime()).length,
+      active: contacts.filter((item) => item.status === "active").length,
+      tagged: contacts.filter((item) => item.tags.length > 0).length
+    }
+  }, 200, cors);
+}
+
+async function upsertCrmContact(request, env, cors, user) {
+  const body = await safeJson(request);
+  const lineUid = cleanText(body.lineUid, 80);
+  const displayName = cleanText(body.displayName, 120);
+  const avatarUrl = cleanHttpsUrl(body.avatarUrl, 1200);
+  if (!/^U[0-9a-f]{32}$/i.test(lineUid)) throw httpError(400, "找不到有效的 LINE UID");
+  if (!displayName && !avatarUrl) throw httpError(400, "找不到可辨識的聯絡人資料");
+  const existing = await env.DB.prepare(
+    "SELECT id FROM crm_contacts WHERE user_id = ? AND line_uid = ? LIMIT 1"
+  ).bind(user.id, lineUid).first();
+  const now = new Date().toISOString();
+  const id = existing?.id || crypto.randomUUID();
+  await env.DB.prepare(`
+    INSERT INTO crm_contacts (
+      id, user_id, line_uid, display_name, avatar_url, status, source,
+      first_seen_at, last_seen_at, last_chat_at, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, 'active', 'chat_auto_capture', ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, line_uid) DO UPDATE SET
+      display_name = CASE WHEN excluded.display_name <> '' THEN excluded.display_name ELSE crm_contacts.display_name END,
+      avatar_url = CASE WHEN excluded.avatar_url <> '' THEN excluded.avatar_url ELSE crm_contacts.avatar_url END,
+      last_seen_at = excluded.last_seen_at,
+      last_chat_at = excluded.last_chat_at,
+      updated_at = excluded.updated_at
+  `).bind(id, user.id, lineUid, displayName, avatarUrl, now, now, now, now, now).run();
+  await audit(env, user.id, existing ? "crm.contact.refresh" : "crm.contact.create", lineUid);
+  const contact = await env.DB.prepare(
+    `SELECT id, line_uid, display_name, avatar_url, phone, email, tags_json, notes,
+            status, source, first_seen_at, last_seen_at, last_chat_at, created_at, updated_at
+     FROM crm_contacts WHERE id = ? AND user_id = ?`
+  ).bind(id, user.id).first();
+  return json({ ok: true, created: !existing, contact: publicCrmContact(contact) }, existing ? 200 : 201, cors);
+}
+
+async function updateCrmContact(request, env, cors, user, id) {
+  if (!id || id.length > 80) throw httpError(400, "CRM 聯絡人識別碼無效");
+  const existing = await env.DB.prepare(
+    "SELECT id FROM crm_contacts WHERE id = ? AND user_id = ? LIMIT 1"
+  ).bind(id, user.id).first();
+  if (!existing) throw httpError(404, "找不到 CRM 聯絡人");
+  const body = await safeJson(request);
+  const displayName = cleanText(body.displayName, 120);
+  const phone = cleanText(body.phone, 40);
+  const email = cleanText(body.email, 254).toLowerCase();
+  const notes = cleanText(body.notes, 3000);
+  const status = body.status === "archived" ? "archived" : "active";
+  const tags = Array.isArray(body.tags)
+    ? [...new Set(body.tags.map((tag) => cleanText(tag, 40)).filter(Boolean))].slice(0, 20)
+    : [];
+  if (!displayName) throw httpError(400, "請輸入客戶名稱");
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw httpError(400, "Email 格式不正確");
+  const now = new Date().toISOString();
+  await env.DB.prepare(`
+    UPDATE crm_contacts
+    SET display_name = ?, phone = ?, email = ?, tags_json = ?, notes = ?, status = ?, updated_at = ?
+    WHERE id = ? AND user_id = ?
+  `).bind(displayName, phone, email, JSON.stringify(tags), notes, status, now, id, user.id).run();
+  await audit(env, user.id, "crm.contact.update", id);
+  const contact = await env.DB.prepare(
+    `SELECT id, line_uid, display_name, avatar_url, phone, email, tags_json, notes,
+            status, source, first_seen_at, last_seen_at, last_chat_at, created_at, updated_at
+     FROM crm_contacts WHERE id = ? AND user_id = ?`
+  ).bind(id, user.id).first();
+  return json({ ok: true, contact: publicCrmContact(contact) }, 200, cors);
+}
+
+function publicCrmContact(row) {
+  let tags = [];
+  try {
+    const parsed = JSON.parse(String(row?.tags_json || "[]"));
+    if (Array.isArray(parsed)) tags = parsed.map((tag) => cleanText(tag, 40)).filter(Boolean).slice(0, 20);
+  } catch {
+    tags = [];
+  }
+  return {
+    id: String(row?.id || ""),
+    lineUid: String(row?.line_uid || ""),
+    displayName: String(row?.display_name || ""),
+    avatarUrl: String(row?.avatar_url || ""),
+    phone: String(row?.phone || ""),
+    email: String(row?.email || ""),
+    tags,
+    notes: String(row?.notes || ""),
+    status: row?.status === "archived" ? "archived" : "active",
+    source: String(row?.source || ""),
+    firstSeenAt: String(row?.first_seen_at || ""),
+    lastSeenAt: String(row?.last_seen_at || ""),
+    lastChatAt: String(row?.last_chat_at || ""),
+    createdAt: String(row?.created_at || ""),
+    updatedAt: String(row?.updated_at || "")
+  };
 }
 
 async function requireUser(request, env) {
@@ -369,6 +500,17 @@ function randomToken(bytes) {
 async function sha256(value) {
   const digest = await crypto.subtle.digest("SHA-256", encoder.encode(String(value)));
   return base64Url(new Uint8Array(digest));
+}
+
+function cleanHttpsUrl(value, max) {
+  const text = cleanText(value, max);
+  if (!text) return "";
+  try {
+    const url = new URL(text);
+    return url.protocol === "https:" ? url.href.slice(0, max) : "";
+  } catch {
+    return "";
+  }
 }
 async function derivePassword(password, salt) {
   const material = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);

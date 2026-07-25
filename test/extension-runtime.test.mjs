@@ -4,6 +4,7 @@ import test from "node:test";
 import vm from "node:vm";
 
 const contentSource = readFileSync(new URL("../extension/content.js", import.meta.url), "utf8");
+const crmSource = readFileSync(new URL("../extension/crm.js", import.meta.url), "utf8");
 
 test("content script inserts one isolated panel and switches modes without touching the host page", async () => {
   const listeners = new Map();
@@ -62,7 +63,7 @@ test("content script inserts one isolated panel and switches modes without touch
     observe() {}
   }
 
-  vm.runInNewContext(contentSource, {
+  vm.runInNewContext(`${crmSource}\n${contentSource}`, {
     chrome,
     console: { info() {} },
     document,
@@ -234,7 +235,7 @@ test("chat.line.biz fallback reads central visible bubbles and excludes the left
     href: "https://chat.line.biz/Uofficial/chat/U1234567890abcdef1234567890abcdef"
   };
 
-  vm.runInNewContext(contentSource, {
+  vm.runInNewContext(`${crmSource}\n${contentSource}`, {
     chrome,
     console: { info() {} },
     document,

@@ -36,6 +36,7 @@
     document.documentElement.appendChild(root);
     bindRootEvents();
     observeReinsertion();
+    await globalThis.LINEOA_CRM.init(() => render());
 
     const stored = await chrome.storage.local.get([MODE_KEY, LAYOUT_VERSION_KEY]);
     if (stored[LAYOUT_VERSION_KEY] === LAYOUT_VERSION && ["float", "side", "full"].includes(stored[MODE_KEY])) {
@@ -55,6 +56,7 @@
       if (session.authenticated) {
         state.user = session.user;
         state.limits = session.limits;
+        globalThis.LINEOA_CRM.setAuthenticated(true);
         await loadKnowledge();
       }
     } catch (error) {
@@ -77,11 +79,16 @@
       if (!button) return;
       const action = button.dataset.action;
 
+      if (action.startsWith("crm-")) {
+        await globalThis.LINEOA_CRM.handleClick(action, button, state.contact);
+        return;
+      }
       if (action === "mode") return setMode(button.dataset.mode);
       if (action === "admin-view") {
-        state.adminView = ["overview", "monitor", "knowledge", "account", "settings"].includes(button.dataset.view)
+        state.adminView = ["overview", "monitor", "crm", "knowledge", "account", "settings"].includes(button.dataset.view)
           ? button.dataset.view
           : "overview";
+        if (state.adminView === "crm") await globalThis.LINEOA_CRM.load();
         return render();
       }
       if (action === "toggle-admin-group") {
@@ -120,6 +127,11 @@
     });
 
     root.addEventListener("submit", async (event) => {
+      if (event.target.id === "lineoa-crm-form") {
+        event.preventDefault();
+        await globalThis.LINEOA_CRM.handleSubmit(event.target);
+        return;
+      }
       if (event.target.id !== "lineoa-auth-form") return;
       event.preventDefault();
       await authenticate(new FormData(event.target));
@@ -150,6 +162,7 @@
       });
       state.user = result.user;
       state.limits = result.limits;
+      globalThis.LINEOA_CRM.setAuthenticated(true);
       await loadKnowledge();
       state.notice = "登入成功，知識庫已同步";
       if (state.conversationKey) scanVisibleConversation({ automatic: true });
@@ -170,6 +183,7 @@
       // The background worker clears the local session even if the API is unavailable.
     }
     state.user = null;
+    globalThis.LINEOA_CRM.setAuthenticated(false);
     state.knowledge = [];
     state.messages = [];
     state.suggestions = [];
@@ -253,6 +267,7 @@
     state.notice = `已切換至 ${next.name || "目前聯絡人"}，正在自動讀取目前對話`;
     render();
     if (state.user) setTimeout(() => scanVisibleConversation({ automatic: true }), 450);
+    globalThis.LINEOA_CRM.followConversation(next);
   }
 
   function readActiveContact() {
@@ -480,7 +495,7 @@
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.11</small></div>
+          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.12</small></div>
           <nav aria-label="顯示模式">
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
             <button type="button" data-action="mode" data-mode="full" title="開啟管理全版">□</button>
@@ -496,6 +511,7 @@
     const titles = {
       overview: "工作總覽",
       monitor: "聊天室監控",
+      crm: "客戶 CRM",
       knowledge: "知識庫",
       account: "帳戶方案",
       settings: "串接設定"
@@ -515,12 +531,13 @@
     return `
       <section class="lineoa-admin-shell" aria-live="polite">
         <aside class="lineoa-admin-sidebar">
-          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.11</small></div></div>
+          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.12</small></div></div>
           <nav>
             ${groupHeader("service", "📦", "服務中心")}
             ${state.adminGroups.service ? `
               ${navItem("overview", "▦", "工作總覽")}
-              ${navItem("monitor", "◉", "聊天室監控")}` : ""}
+              ${navItem("monitor", "◉", "聊天室監控")}
+              ${navItem("crm", "♙", "客戶 CRM")}` : ""}
             ${groupHeader("tools", "🛠️", "管理工具")}
             ${state.adminGroups.tools ? `
               ${navItem("knowledge", "▤", "知識庫")}
@@ -560,6 +577,7 @@
 
   function fullAdminContent(current, limit) {
     if (state.adminView === "monitor") return fullMonitorView();
+    if (state.adminView === "crm") return globalThis.LINEOA_CRM.renderView();
     if (state.adminView === "knowledge") return fullKnowledgeView(current, limit);
     if (state.adminView === "account") return fullAccountView(current, limit);
     if (state.adminView === "settings") return fullSettingsView();
@@ -680,7 +698,7 @@
       <section class="lineoa-admin-card">
         <div class="lineoa-admin-card-title"><div><h3>安全與隱私</h3><p>擴充功能資料邊界</p></div></div>
         <div class="lineoa-admin-table-row"><strong>登入權杖</strong><span>只保存在 Chrome 擴充功能自己的儲存空間</span><em>本機</em></div>
-        <div class="lineoa-admin-table-row"><strong>LINE 資料</strong><span>不讀取 Cookie 或 LINE Token</span><em>不存取</em></div>
+        <div class="lineoa-admin-table-row"><strong>LINE 資料</strong><span>不讀取 Cookie 或 LINE Token；CRM 自動擷取預設關閉，只同步 UID、名稱與頭貼</span><em>可控</em></div>
       </section>`;
   }
 
