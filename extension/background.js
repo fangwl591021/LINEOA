@@ -5,6 +5,8 @@ import { handleRichMenuMessage, isRichMenuMessage } from "./rich-menu-background
 const API_BASE = "https://line-oa.fangwl591021.workers.dev";
 const TOKEN_KEY = "lineoa_token";
 const SETTINGS_KEY = "lineoa_integration_settings";
+const CRM_PENDING_URL_KEY = "lineoa_crm_pending_url_capture";
+const CRM_URL_RESULT_KEY = "lineoa_crm_url_capture_result";
 
 chrome.runtime.onInstalled.addListener(() => {
   console.info("LINEOA test extension installed");
@@ -66,6 +68,23 @@ async function handleMessage(message, sender) {
     return apiRequest("/api/knowledge", { token });
   }
 
+
+  if (type === "lineoa:crm:open-chat") {
+    requireLinePage(sender);
+    await requireToken();
+    const target = sanitizeCrmChatUrl(message.url);
+    await chrome.storage.local.set({
+      [CRM_PENDING_URL_KEY]: { uid: target.uid, expiresAt: Date.now() + 2 * 60 * 1000 }
+    });
+    await chrome.storage.local.remove(CRM_URL_RESULT_KEY);
+    try {
+      await chrome.tabs.create({ url: target.url, active: true });
+    } catch (error) {
+      await chrome.storage.local.remove(CRM_PENDING_URL_KEY);
+      throw error;
+    }
+    return { ok: true, uid: target.uid };
+  }
 
   if (type === "lineoa:crm:list") {
     requireLinePage(sender);
@@ -177,6 +196,25 @@ function sanitizeIntegrationSettings(input, current) {
     if (value) next[field] = value.slice(0, limit);
   }
 
+  return next;
+}
+
+function sanitizeCrmChatUrl(input) {
+  let url;
+  try {
+    url = new URL(String(input || "").trim());
+  } catch {
+    throw new Error("請輸入有效的聊天室網址");
+  }
+  if (url.protocol !== "https:" || url.hostname !== "chat.line.biz") {
+    throw new Error("只允許 chat.line.biz 聊天室網址");
+  }
+  const match = url.pathname.match(/\/chat\/(U[0-9a-f]{32})(?:\/|$)/i);
+  if (!match) throw new Error("網址中找不到有效的 LINE UID");
+  url.hash = "";
+  return { url: url.href, uid: match[1] };
+}
+
 function sanitizeCrmCapture(input) {
   const lineUid = String(input?.lineUid || "").trim().slice(0, 80);
   if (!/^U[0-9a-f]{32}$/i.test(lineUid)) throw new Error("找不到有效的 LINE UID");
@@ -212,8 +250,6 @@ function requireLinePage(sender) {
   if (url.protocol !== "https:" || !["chat.line.biz", "manager.line.biz"].includes(url.hostname)) {
     throw new Error("CRM 只能由 LINE 官方帳號管理頁使用");
   }
-}
-  return next;
 }
 
 function requireOptionsPage(sender) {

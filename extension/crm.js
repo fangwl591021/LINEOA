@@ -2,6 +2,8 @@
 
 (() => {
   const AUTO_KEY = "lineoa_crm_auto_capture";
+  const PENDING_URL_KEY = "lineoa_crm_pending_url_capture";
+  const URL_RESULT_KEY = "lineoa_crm_url_capture_result";
   const state = {
     authenticated: false,
     autoCapture: false,
@@ -11,14 +13,28 @@
     loading: false,
     notice: "",
     lastSyncKey: "",
+    pendingUrlCapture: null,
     timer: 0,
     render: () => {}
   };
 
   async function init(render) {
     state.render = typeof render === "function" ? render : () => {};
-    const stored = await chrome.storage.local.get(AUTO_KEY);
+    const stored = await chrome.storage.local.get([AUTO_KEY, PENDING_URL_KEY]);
     state.autoCapture = stored[AUTO_KEY] === true;
+    state.pendingUrlCapture = validPending(stored[PENDING_URL_KEY]);
+    chrome.storage.onChanged?.addListener?.((changes, areaName) => {
+      if (areaName !== "local") return;
+      if (changes[PENDING_URL_KEY]) {
+        state.pendingUrlCapture = validPending(changes[PENDING_URL_KEY].newValue);
+      }
+      if (changes[URL_RESULT_KEY]?.newValue) {
+        const result = changes[URL_RESULT_KEY].newValue;
+        state.notice = result.ok ? "聊天室網址擷取完成，CRM 已更新" : String(result.message || "聊天室網址擷取失敗");
+        if (state.authenticated && result.ok) load();
+        else state.render();
+      }
+    });
   }
 
   function setAuthenticated(value) {
@@ -48,12 +64,17 @@
 
   function followConversation(contact) {
     clearTimeout(state.timer);
-    if (!state.authenticated || !state.autoCapture) return;
+    const pending = validPending(state.pendingUrlCapture);
+    const pendingMatches = pending && String(contact?.uid || "").toLowerCase() === pending.uid.toLowerCase();
+    if (!state.authenticated || (!state.autoCapture && !pendingMatches)) return;
     state.timer = setTimeout(() => {
-      capture(contact, false).catch((error) => {
-        state.notice = error.message;
-        state.render();
-      });
+      capture(contact, pendingMatches)
+        .then(() => pendingMatches ? completeUrlCapture(true) : undefined)
+        .catch((error) => {
+          state.notice = error.message;
+          if (pendingMatches && Date.now() >= pending.expiresAt) completeUrlCapture(false, error.message);
+          else state.render();
+        });
     }, 1200);
   }
 
@@ -125,6 +146,18 @@
   }
 
   async function handleSubmit(form) {
+    if (form?.id === "lineoa-crm-url-form") {
+      const data = new FormData(form);
+      try {
+        const result = await send({ type: "lineoa:crm:open-chat", url: data.get("chatUrl") });
+        state.notice = `已開啟 UID ${result.uid} 的聊天室；載入完成後會自動寫入 CRM`;
+        form.reset();
+      } catch (error) {
+        state.notice = error.message;
+      }
+      state.render();
+      return true;
+    }
     if (form?.id !== "lineoa-crm-form") return false;
     const data = new FormData(form);
     try {
@@ -170,6 +203,11 @@
           <button class="${state.autoCapture ? "lineoa-primary" : ""}" type="button" data-action="crm-auto-toggle">${state.autoCapture ? "自動擷取：開" : "自動擷取：關"}</button>
         </div>
       </div>
+      <form id="lineoa-crm-url-form" class="lineoa-crm-url-form">
+        <div><strong>從聊天室網址擷取</strong><span>貼上 LINE OA 一對一聊天室網址，系統會開啟聊天室並自動抓取 UID、名稱與頭貼。</span></div>
+        <label><span class="lineoa-sr-only">聊天室網址</span><input name="chatUrl" type="url" required autocomplete="off" placeholder="https://chat.line.biz/.../chat/Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"></label>
+        <button class="lineoa-primary" type="submit">開啟並自動抓取</button>
+      </form>
       <div class="lineoa-crm-rule ${state.autoCapture ? "active" : ""}">
         <strong>${state.autoCapture ? "自動寫入已開啟" : "自動寫入預設關閉"}</strong>
         <span>只有已登入、位於 chat.line.biz 一對一聊天室、取得有效 LINE UID 及名稱或頭貼、且切換穩定 1.2 秒後才會寫入。以「LINEOA 帳戶 + LINE UID」去重；不儲存聊天內容、Cookie 或 LINE Token。</span>
@@ -225,6 +263,24 @@
     const time = Date.parse(String(value || ""));
     if (!Number.isFinite(time)) return "-";
     return new Intl.DateTimeFormat("zh-TW", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(time));
+  }
+
+  function validPending(value) {
+    if (!value || typeof value !== "object") return null;
+    const uid = String(value.uid || "");
+    const expiresAt = Number(value.expiresAt || 0);
+    if (!/^U[0-9a-f]{32}$/i.test(uid) || expiresAt <= Date.now()) return null;
+    return { uid, expiresAt };
+  }
+
+  async function completeUrlCapture(ok, message = "") {
+    const pending = validPending(state.pendingUrlCapture);
+    if (!pending) return;
+    state.pendingUrlCapture = null;
+    await chrome.storage.local.set({
+      [URL_RESULT_KEY]: { ok, uid: pending.uid, message: String(message || "").slice(0, 200), completedAt: Date.now() }
+    });
+    await chrome.storage.local.remove(PENDING_URL_KEY);
   }
 
   function escapeHtml(value) {
