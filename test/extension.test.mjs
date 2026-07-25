@@ -16,7 +16,7 @@ const testing = readFileSync(new URL("../extension/TESTING.md", import.meta.url)
 
 test("extension uses a narrow Manifest V3 boundary", () => {
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.1.10");
+  assert.equal(manifest.version, "0.1.11");
   assert.deepEqual(manifest.permissions, ["storage", "activeTab"]);
   assert.deepEqual(manifest.host_permissions, [
     "https://line-oa.fangwl591021.workers.dev/*",
@@ -69,6 +69,11 @@ test("rich menu editor uses a private token path and paid entitlement", () => {
   assert.match(menuHtml, /切換選單 \(Switch\)/);
   assert.match(menuJs, /richMenuAliasId/);
   assert.match(menuJs, /切換資料 Data/);
+  assert.match(menuHtml, /id="menu-gallery-list"/);
+  assert.match(menuHtml, /點選縮圖切換編輯/);
+  assert.match(menuJs, /indexedDB\.open\(DRAFT_DB_NAME/);
+  assert.match(menuJs, /loadDraftById/);
+  assert.match(menuJs, /thumbnailBase64/);
   assert.match(menuJs, /lineoa:rich-menu:entitlement/);
   assert.match(menuJs, /lineoa:rich-menu:deploy/);
   assert.doesNotMatch(menuJs, /lineBotChannelAccessToken|authorization/i);
