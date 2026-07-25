@@ -120,6 +120,7 @@ test("content script inserts one isolated panel and switches modes without touch
 
 test("chat.line.biz fallback reads central visible bubbles and excludes the left account list", async () => {
   const listeners = new Map();
+  const observerCallbacks = [];
   let root = null;
 
   function candidate(text, left, top, options = {}) {
@@ -138,6 +139,16 @@ test("chat.line.biz fallback reads central visible bubbles and excludes the left
     };
   }
 
+  const contactName = candidate("測試聯絡人", 590, 92);
+  const contactAvatar = {
+    childElementCount: 0,
+    currentSrc: "https://example.invalid/avatar.png",
+    src: "https://example.invalid/avatar.png",
+    closest() { return null; },
+    getBoundingClientRect() {
+      return { left: 535, right: 579, top: 82, bottom: 126, width: 44, height: 44 };
+    }
+  };
   const visibleElements = [
     candidate("左側客戶名單", 80, 360),
     candidate("待處理", 700, 170, { insideButton: true }),
@@ -163,7 +174,11 @@ test("chat.line.biz fallback reads central visible bubbles and excludes the left
         }
       };
     },
-    querySelectorAll(selector) { return selector === "p, span, div" ? visibleElements : []; }
+    querySelectorAll(selector) {
+      if (selector === "img") return [contactAvatar];
+      if (selector.startsWith("h1, h2, h3")) return [contactName];
+      return selector === "p, span, div" ? visibleElements : [];
+    }
   };
 
   const chrome = {
@@ -191,7 +206,16 @@ test("chat.line.biz fallback reads central visible bubbles and excludes the left
     }
   };
 
-  class MutationObserver { observe() {} }
+  class MutationObserver {
+    constructor(callback) { observerCallbacks.push(callback); }
+    observe() {}
+  }
+
+  const testLocation = {
+    hostname: "chat.line.biz",
+    pathname: "/Uofficial/chat/U1234567890abcdef1234567890abcdef",
+    href: "https://chat.line.biz/Uofficial/chat/U1234567890abcdef1234567890abcdef"
+  };
 
   vm.runInNewContext(contentSource, {
     chrome,
@@ -201,8 +225,12 @@ test("chat.line.biz fallback reads central visible bubbles and excludes the left
     getComputedStyle() { return { display: "block", visibility: "visible", opacity: "1" }; },
     innerHeight: 1080,
     innerWidth: 1920,
-    location: { hostname: "chat.line.biz" },
+    location: testLocation,
     MutationObserver,
+    setTimeout(callback) { callback(); return 1; },
+    clearTimeout() {},
+    setInterval() { return 1; },
+    decodeURIComponent,
     navigator: { clipboard: { async writeText() {} } },
     URL
   });
@@ -212,12 +240,24 @@ test("chat.line.biz fallback reads central visible bubbles and excludes the left
   await listeners.get("click")({
     target: { closest() { return { dataset: { action: "mode", mode: "side" } }; } }
   });
-  await listeners.get("click")({
-    target: { closest() { return { dataset: { action: "scan" } }; } }
-  });
 
+  assert.match(root.innerHTML, /測試聯絡人/);
+  assert.match(root.innerHTML, /U1234567890abcdef1234567890abcdef/);
+  assert.match(root.innerHTML, /https:\/\/example\.invalid\/avatar\.png/);
+  assert.match(root.innerHTML, /自動跟隨/);
   assert.match(root.innerHTML, /每日簽到贈點/);
   assert.match(root.innerHTML, /簽到成功，已贈送 5 K點/);
   assert.doesNotMatch(root.innerHTML, /左側客戶名單/);
   assert.match(root.innerHTML, /已為您確認簽到點數/);
+
+  testLocation.pathname = "/Uofficial/chat/Ufedcba0987654321fedcba0987654321";
+  testLocation.href = "https://chat.line.biz/Uofficial/chat/Ufedcba0987654321fedcba0987654321";
+  contactName.innerText = "第二位聯絡人";
+  contactName.textContent = "第二位聯絡人";
+  observerCallbacks[1]();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.match(root.innerHTML, /第二位聯絡人/);
+  assert.match(root.innerHTML, /Ufedcba0987654321fedcba0987654321/);
+  assert.match(root.innerHTML, /已自動跟隨目前聊天室/);
 });

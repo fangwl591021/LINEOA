@@ -11,7 +11,7 @@ const testing = readFileSync(new URL("../extension/TESTING.md", import.meta.url)
 
 test("extension uses a narrow Manifest V3 boundary", () => {
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.1.4");
+  assert.equal(manifest.version, "0.1.5");
   assert.deepEqual(manifest.permissions, ["storage", "activeTab"]);
   assert.deepEqual(manifest.host_permissions, ["https://line-oa.fangwl591021.workers.dev/*"]);
   assert.deepEqual(manifest.content_scripts[0].matches, [
@@ -30,10 +30,16 @@ test("session token remains behind the extension background worker", () => {
   assert.match(background, /referrerPolicy: "no-referrer"/);
   assert.doesNotMatch(content, /lineoa_token/);
   assert.doesNotMatch(content, /authorization/i);
+  assert.doesNotMatch(background, /contact|avatar|conversationKey/i);
 });
 
-test("content workflow is manual and has three display modes", () => {
+test("content workflow follows the active chat and has three display modes", () => {
   assert.match(content, /data-action="scan"/);
+  assert.match(content, /startConversationTracking/);
+  assert.match(content, /location\.pathname/);
+  assert.match(content, /avatar\?\.currentSrc/);
+  assert.match(content, /LINE UID/);
+  assert.match(content, /scanVisibleConversation\(\{ automatic: true \}\)/);
   assert.match(content, /navigator\.clipboard\.writeText/);
   assert.match(content, /\["float", "side", "full"\]/);
   assert.doesNotMatch(content, /\.click\(\)/);
@@ -61,5 +67,5 @@ test("chat.line.biz has a visible central-chat fallback", () => {
 test("test instructions state the privacy and no-send boundaries", () => {
   assert.match(testing, /不讀取 Cookie、LINE Token/);
   assert.match(testing, /不捲動聊天頁、不填入輸入框、不點擊傳送、不自動發送/);
-  assert.match(testing, /聊天文字只在瀏覽器內/);
+  assert.match(testing, /聊天文字、聯絡人 UID、名稱與頭貼只在目前瀏覽器頁面使用/);
 });
