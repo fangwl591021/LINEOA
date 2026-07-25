@@ -16,7 +16,7 @@ const testing = readFileSync(new URL("../extension/TESTING.md", import.meta.url)
 
 test("extension uses a narrow Manifest V3 boundary", () => {
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.1.9");
+  assert.equal(manifest.version, "0.1.10");
   assert.deepEqual(manifest.permissions, ["storage", "activeTab"]);
   assert.deepEqual(manifest.host_permissions, [
     "https://line-oa.fangwl591021.workers.dev/*",
@@ -65,12 +65,18 @@ test("rich menu editor uses a private token path and paid entitlement", () => {
   assert.match(menuHtml, /返回串接設定/);
   assert.match(menuJs, /DISPLAY_WIDTH = 720/);
   assert.match(menuJs, /window\.history\.back|window\.close/);
+  assert.match(menuHtml, /value="richmenuswitch"/);
+  assert.match(menuHtml, /切換選單 \(Switch\)/);
+  assert.match(menuJs, /richMenuAliasId/);
+  assert.match(menuJs, /切換資料 Data/);
   assert.match(menuJs, /lineoa:rich-menu:entitlement/);
   assert.match(menuJs, /lineoa:rich-menu:deploy/);
   assert.doesNotMatch(menuJs, /lineBotChannelAccessToken|authorization/i);
   assert.match(richMenuBackground, /api-data\.line\.me/);
   assert.match(richMenuBackground, /deploy-authorize/);
   assert.match(richMenuBackground, /requireMenuPage/);
+  assert.match(richMenuBackground, /type === "richmenuswitch"/);
+  assert.match(richMenuBackground, /richMenuAliasId/);
   assert.match(richMenuBackground, /MAX_IMAGE_BYTES = 1024 \* 1024/);
   assert.doesNotMatch(richMenuBackground, /console\./);
 });

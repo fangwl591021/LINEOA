@@ -114,6 +114,13 @@ function sanitizeArea(area, maxWidth, maxHeight) {
     if (!data) throw new Error("Postback Data 不可空白");
     return { bounds, action: { type, data, ...(displayText ? { displayText } : {}) } };
   }
+  if (type === "richmenuswitch") {
+    const richMenuAliasId = cleanText(area.action.richMenuAliasId, 32);
+    const data = cleanText(area.action.data, 300);
+    if (!/^[a-z0-9_-]{1,32}$/.test(richMenuAliasId)) throw new Error("Rich Menu Alias ID 格式不正確");
+    if (!data) throw new Error("切換選單 Data 不可空白");
+    return { bounds, action: { type, richMenuAliasId, data } };
+  }
   throw new Error("不支援的點擊動作");
 }
 
