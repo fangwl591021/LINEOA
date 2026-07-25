@@ -1,6 +1,7 @@
 "use strict";
 
 const ORIGINAL_WIDTH = 2500;
+const DISPLAY_WIDTH = 720;
 const VALID_HEIGHTS = new Set([843, 1686]);
 const MAX_IMAGE_BYTES = 1024 * 1024;
 const canvas = document.getElementById("menu-canvas");
@@ -38,6 +39,13 @@ document.getElementById("clear-areas").addEventListener("click", () => {
 });
 document.getElementById("save-draft").addEventListener("click", saveDraft);
 document.getElementById("load-draft").addEventListener("click", loadDraft);
+document.getElementById("cancel-menu").addEventListener("click", () => {
+  if (window.history.length > 1) {
+    window.history.back();
+    return;
+  }
+  window.close();
+});
 deployButton.addEventListener("click", deploy);
 canvas.addEventListener("pointerdown", pointerDown);
 canvas.addEventListener("pointermove", pointerMove);
@@ -77,8 +85,8 @@ async function loadImage(event) {
   state.imageType = file.type;
   state.originalHeight = image.naturalHeight;
   state.areas = [];
-  canvas.width = 1000;
-  canvas.height = Math.round(1000 * image.naturalHeight / ORIGINAL_WIDTH);
+  canvas.width = DISPLAY_WIDTH;
+  canvas.height = Math.round(DISPLAY_WIDTH * image.naturalHeight / ORIGINAL_WIDTH);
   placeholder.classList.add("hidden");
   setNotice("底圖已載入，請按「開始劃定區域」後在圖片拖曳。", "success");
   render();
@@ -248,7 +256,7 @@ async function loadDraft() {
     state.areas = payload.richMenuConfig.areas || [];
     document.getElementById("menu-name").value = payload.richMenuConfig.name || "";
     document.getElementById("chatbar-text").value = payload.richMenuConfig.chatBarText || "";
-    canvas.height = Math.round(1000 * state.originalHeight / ORIGINAL_WIDTH);
+    canvas.height = Math.round(DISPLAY_WIDTH * state.originalHeight / ORIGINAL_WIDTH);
     placeholder.classList.add("hidden");
     render();
     setNotice("已載入本機草稿。", "success");

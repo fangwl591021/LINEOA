@@ -9,13 +9,18 @@
 <body>
   <header class="topbar">
     <div>
-      <a href="options.html" class="back">← 返回串接設定</a>
       <h1>圖文選單編輯器</h1>
       <p>從宏學圖文選單流程移植，使用您自己的 LINE Bot token 部署。</p>
     </div>
-    <div class="entitlement-wrap">
-      <div id="entitlement" class="entitlement pending">正在確認 30 天試用資格…</div>
-      <a href="https://line-oa.fangwl591021.workers.dev/app" target="_blank" rel="noreferrer">方案與開通</a>
+    <div class="topbar-actions">
+      <div class="entitlement-wrap">
+        <div id="entitlement" class="entitlement pending">正在確認 30 天試用資格…</div>
+        <a href="https://line-oa.fangwl591021.workers.dev/app" target="_blank" rel="noreferrer">方案與開通</a>
+      </div>
+      <nav class="page-actions" aria-label="頁面操作">
+        <a href="options.html">← 返回串接設定</a>
+        <button id="cancel-menu" type="button">取消並關閉</button>
+      </nav>
     </div>
   </header>
 
@@ -59,7 +64,7 @@
     <section class="canvas-panel">
       <div id="notice" class="notice">請先上傳選單底圖。</div>
       <div class="canvas-wrap">
-        <canvas id="menu-canvas" width="1000" height="337"></canvas>
+        <canvas id="menu-canvas" width="720" height="243"></canvas>
         <div id="placeholder" class="placeholder">上傳圖片後即可劃定點擊區域</div>
       </div>
       <div class="deploy-bar">
