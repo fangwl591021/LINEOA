@@ -56,23 +56,35 @@
       </section>
 
       <section class="local-actions">
-        <button id="save-draft" type="button">儲存本機草稿</button>
-        <button id="load-draft" type="button">載入本機草稿</button>
+        <button id="save-draft" type="button">儲存／更新選單</button>
       </section>
     </aside>
 
     <section class="canvas-panel">
       <div id="notice" class="notice">請先上傳選單底圖。</div>
-      <div class="canvas-wrap">
-        <canvas id="menu-canvas" width="720" height="243"></canvas>
-        <div id="placeholder" class="placeholder">上傳圖片後即可劃定點擊區域</div>
-      </div>
-      <div class="deploy-bar">
-        <div>
-          <strong>圖文選單部署</strong>
-          <span>試用 30 天；試用後 NT$199／年。部署會直接更新官方帳號的預設圖文選單。</span>
+      <div class="canvas-layout">
+        <div class="canvas-column">
+          <div class="canvas-wrap">
+            <canvas id="menu-canvas" width="720" height="243"></canvas>
+            <div id="placeholder" class="placeholder">上傳圖片後即可劃定點擊區域</div>
+          </div>
+          <div class="deploy-bar">
+            <div>
+              <strong>圖文選單部署</strong>
+              <span>試用 30 天；試用後 NT$199／年。部署會直接更新官方帳號的預設圖文選單。</span>
+            </div>
+            <button id="deploy" class="deploy" type="button" disabled>部署至 LINE</button>
+          </div>
         </div>
-        <button id="deploy" class="deploy" type="button" disabled>部署至 LINE</button>
+        <aside class="menu-gallery" aria-label="我的圖文選單">
+          <div class="gallery-head">
+            <div><h2>我的選單</h2><small>點選縮圖切換編輯</small></div>
+            <button id="new-menu" type="button">＋ 新增</button>
+          </div>
+          <div id="menu-gallery-list" class="gallery-list">
+            <p class="gallery-empty">儲存後會在這裡顯示縮圖</p>
+          </div>
+        </aside>
       </div>
     </section>
   </main>

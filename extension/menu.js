@@ -4,6 +4,10 @@ const ORIGINAL_WIDTH = 2500;
 const DISPLAY_WIDTH = 720;
 const VALID_HEIGHTS = new Set([843, 1686]);
 const MAX_IMAGE_BYTES = 1024 * 1024;
+const DRAFT_DB_NAME = "lineoa-rich-menu-library";
+const DRAFT_STORE = "menus";
+const ACTIVE_DRAFT_KEY = "lineoa_rich_menu_active_id";
+const LEGACY_DRAFT_KEY = "lineoa_rich_menu_draft";
 const canvas = document.getElementById("menu-canvas");
 const context = canvas.getContext("2d");
 const notice = document.getElementById("notice");
@@ -11,6 +15,7 @@ const placeholder = document.getElementById("placeholder");
 const areasContainer = document.getElementById("areas");
 const deployButton = document.getElementById("deploy");
 const entitlementBox = document.getElementById("entitlement");
+const galleryList = document.getElementById("menu-gallery-list");
 const state = {
   image: null,
   imageDataUrl: "",
@@ -20,10 +25,13 @@ const state = {
   drawing: false,
   dragStart: null,
   draftRect: null,
-  entitlement: null
+  entitlement: null,
+  activeDraftId: ""
 };
+let draftDbPromise;
 
 loadEntitlement();
+initializeDraftGallery();
 
 document.getElementById("image-upload").addEventListener("change", loadImage);
 document.getElementById("draw-mode").addEventListener("click", () => {
@@ -38,7 +46,7 @@ document.getElementById("clear-areas").addEventListener("click", () => {
   }
 });
 document.getElementById("save-draft").addEventListener("click", saveDraft);
-document.getElementById("load-draft").addEventListener("click", loadDraft);
+document.getElementById("new-menu").addEventListener("click", () => newMenu());
 document.getElementById("cancel-menu").addEventListener("click", () => {
   if (window.history.length > 1) {
     window.history.back();
@@ -214,6 +222,7 @@ async function deploy() {
   deployButton.textContent = "部署中…";
   try {
     const response = await send({ type: "lineoa:rich-menu:deploy", body: payload });
+    await persistMenu(payload, response.richMenuId);
     setNotice(`部署成功，Rich Menu ID：${response.richMenuId}`, "success");
   } catch (error) {
     setNotice(error.message, "error");
@@ -258,32 +267,203 @@ function buildPayload() {
   };
 }
 
-function saveDraft() {
+async function saveDraft() {
   const payload = buildPayload();
   if (!payload) return;
-  localStorage.setItem("lineoa_rich_menu_draft", JSON.stringify(payload));
-  setNotice("草稿已儲存在這台瀏覽器。", "success");
+  try {
+    await persistMenu(payload);
+    setNotice("選單已儲存並更新右側縮圖。", "success");
+  } catch {
+    setNotice("選單儲存失敗，請確認瀏覽器儲存空間。", "error");
+  }
 }
 
-async function loadDraft() {
+async function persistMenu(payload, richMenuId = "") {
+  const existing = state.activeDraftId ? await getMenuRecord(state.activeDraftId) : null;
+  const record = {
+    id: existing?.id || createDraftId(),
+    payload,
+    thumbnailBase64: createThumbnail(),
+    richMenuId: richMenuId || existing?.richMenuId || "",
+    updatedAt: Date.now()
+  };
+  await putMenuRecord(record);
+  state.activeDraftId = record.id;
+  localStorage.setItem(ACTIVE_DRAFT_KEY, record.id);
+  await renderDraftGallery();
+  return record;
+}
+
+async function initializeDraftGallery() {
   try {
-    const payload = JSON.parse(localStorage.getItem("lineoa_rich_menu_draft") || "null");
-    if (!payload?.imageBase64 || !payload?.richMenuConfig) throw new Error();
-    const image = await decodeImage(payload.imageBase64);
-    state.image = image;
-    state.imageDataUrl = payload.imageBase64;
-    state.imageType = payload.imageType || "image/jpeg";
-    state.originalHeight = payload.richMenuConfig.size.height;
-    state.areas = payload.richMenuConfig.areas || [];
-    document.getElementById("menu-name").value = payload.richMenuConfig.name || "";
-    document.getElementById("chatbar-text").value = payload.richMenuConfig.chatBarText || "";
-    canvas.height = Math.round(DISPLAY_WIDTH * state.originalHeight / ORIGINAL_WIDTH);
-    placeholder.classList.add("hidden");
-    render();
-    setNotice("已載入本機草稿。", "success");
+    await migrateLegacyDraft();
+    const records = await listMenuRecords();
+    await renderDraftGallery(records);
+    if (!records.length) return;
+    const requestedId = localStorage.getItem(ACTIVE_DRAFT_KEY);
+    const active = records.find((item) => item.id === requestedId) || records[0];
+    await loadDraftById(active.id, false);
   } catch {
-    setNotice("沒有可載入的本機草稿。", "error");
+    galleryList.innerHTML = '<p class="gallery-empty">無法讀取本機選單資料庫</p>';
   }
+}
+
+async function renderDraftGallery(records = null) {
+  const items = records || await listMenuRecords();
+  galleryList.replaceChildren();
+  if (!items.length) {
+    const empty = document.createElement("p");
+    empty.className = "gallery-empty";
+    empty.textContent = "儲存後會在這裡顯示縮圖";
+    galleryList.append(empty);
+    return;
+  }
+  items.forEach((record) => {
+    const card = document.createElement("article");
+    card.className = `menu-thumb${record.id === state.activeDraftId ? " active" : ""}`;
+    const select = document.createElement("button");
+    select.type = "button";
+    select.className = "thumb-select";
+    select.title = `切換至 ${record.payload.richMenuConfig.name}`;
+    const image = document.createElement("img");
+    image.src = record.thumbnailBase64 || record.payload.imageBase64;
+    image.alt = `${record.payload.richMenuConfig.name} 縮圖`;
+    image.style.aspectRatio = `2500 / ${record.payload.richMenuConfig.size.height}`;
+    const meta = document.createElement("span");
+    meta.className = "thumb-meta";
+    const name = document.createElement("strong");
+    name.textContent = record.payload.richMenuConfig.name;
+    const time = document.createElement("span");
+    time.textContent = new Date(record.updatedAt).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    meta.append(name, time);
+    select.append(image, meta);
+    select.addEventListener("click", () => loadDraftById(record.id));
+    const status = document.createElement("span");
+    status.className = `thumb-status${record.richMenuId ? " deployed" : ""}`;
+    status.textContent = record.richMenuId ? "已部署" : "草稿";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "thumb-delete";
+    remove.textContent = "刪除";
+    remove.addEventListener("click", () => deleteDraft(record.id, record.payload.richMenuConfig.name));
+    card.append(select, status, remove);
+    galleryList.append(card);
+  });
+}
+
+async function loadDraftById(id, announce = true) {
+  const record = await getMenuRecord(id);
+  if (!record?.payload?.imageBase64 || !record.payload.richMenuConfig) return;
+  const payload = record.payload;
+  const image = await decodeImage(payload.imageBase64);
+  state.activeDraftId = record.id;
+  state.image = image;
+  state.imageDataUrl = payload.imageBase64;
+  state.imageType = payload.imageType || "image/jpeg";
+  state.originalHeight = payload.richMenuConfig.size.height;
+  state.areas = structuredClone(payload.richMenuConfig.areas || []);
+  document.getElementById("menu-name").value = payload.richMenuConfig.name || "";
+  document.getElementById("chatbar-text").value = payload.richMenuConfig.chatBarText || "";
+  canvas.width = DISPLAY_WIDTH;
+  canvas.height = Math.round(DISPLAY_WIDTH * state.originalHeight / ORIGINAL_WIDTH);
+  placeholder.classList.add("hidden");
+  localStorage.setItem(ACTIVE_DRAFT_KEY, record.id);
+  render();
+  await renderDraftGallery();
+  if (announce) setNotice(`已切換至「${payload.richMenuConfig.name}」。`, "success");
+}
+
+function newMenu(force = false) {
+  if (!force && state.image && !window.confirm("要新增空白選單嗎？尚未儲存的變更會遺失。")) return;
+  state.activeDraftId = "";
+  state.image = null;
+  state.imageDataUrl = "";
+  state.imageType = "";
+  state.originalHeight = 843;
+  state.areas = [];
+  state.drawing = false;
+  state.dragStart = null;
+  state.draftRect = null;
+  document.getElementById("menu-name").value = "LINEOA Rich Menu";
+  document.getElementById("chatbar-text").value = "選單";
+  document.getElementById("image-upload").value = "";
+  canvas.width = DISPLAY_WIDTH;
+  canvas.height = Math.round(DISPLAY_WIDTH * 843 / ORIGINAL_WIDTH);
+  placeholder.classList.remove("hidden");
+  localStorage.removeItem(ACTIVE_DRAFT_KEY);
+  render();
+  renderDraftGallery();
+  setNotice("已建立空白選單，請上傳底圖。");
+}
+
+async function deleteDraft(id, name) {
+  if (!window.confirm(`確定刪除「${name}」的本機草稿？`)) return;
+  await deleteMenuRecord(id);
+  if (state.activeDraftId === id) newMenu(true);
+  else await renderDraftGallery();
+}
+
+function createThumbnail() {
+  const width = 240;
+  const height = Math.max(81, Math.round(width * canvas.height / canvas.width));
+  const thumb = document.createElement("canvas");
+  thumb.width = width;
+  thumb.height = height;
+  thumb.getContext("2d").drawImage(canvas, 0, 0, width, height);
+  return thumb.toDataURL("image/jpeg", 0.78);
+}
+
+function createDraftId() {
+  return globalThis.crypto?.randomUUID?.() || `menu-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+async function migrateLegacyDraft() {
+  const legacy = localStorage.getItem(LEGACY_DRAFT_KEY);
+  if (!legacy || localStorage.getItem(`${LEGACY_DRAFT_KEY}_migrated`)) return;
+  const payload = JSON.parse(legacy);
+  if (payload?.imageBase64 && payload?.richMenuConfig) {
+    await putMenuRecord({
+      id: createDraftId(),
+      payload,
+      thumbnailBase64: payload.imageBase64,
+      richMenuId: "",
+      updatedAt: Date.now()
+    });
+  }
+  localStorage.setItem(`${LEGACY_DRAFT_KEY}_migrated`, "1");
+}
+
+function openDraftDatabase() {
+  if (draftDbPromise) return draftDbPromise;
+  draftDbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(DRAFT_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(DRAFT_STORE)) {
+        request.result.createObjectStore(DRAFT_STORE, { keyPath: "id" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  return draftDbPromise;
+}
+
+async function useDraftStore(mode, action) {
+  const database = await openDraftDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(DRAFT_STORE, mode);
+    const request = action(transaction.objectStore(DRAFT_STORE));
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function putMenuRecord(record) { return useDraftStore("readwrite", (store) => store.put(record)); }
+function getMenuRecord(id) { return useDraftStore("readonly", (store) => store.get(id)); }
+function deleteMenuRecord(id) { return useDraftStore("readwrite", (store) => store.delete(id)); }
+async function listMenuRecords() {
+  const items = await useDraftStore("readonly", (store) => store.getAll());
+  return items.sort((left, right) => right.updatedAt - left.updatedAt);
 }
 
 function updateDeployState() {
