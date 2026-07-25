@@ -26,3 +26,8 @@ primaryButton.addEventListener("click", () => {
 document.getElementById("open-app").addEventListener("click", () => {
   chrome.tabs.create({ url: APP_URL });
 });
+
+document.getElementById("open-settings").addEventListener("click", () => {
+  chrome.runtime.openOptionsPage();
+  window.close();
+});

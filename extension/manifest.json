@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LINEOA 測試版",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "自動跟隨 LINE Official Account Manager 目前聊天室，顯示聯絡人資料並提供知識庫回覆建議。",
   "permissions": ["storage", "activeTab"],
   "host_permissions": ["https://line-oa.fangwl591021.workers.dev/*"],
@@ -11,6 +11,10 @@
   "action": {
     "default_title": "LINEOA",
     "default_popup": "popup.html"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
   },
   "content_scripts": [
     {

@@ -2,6 +2,7 @@
 
 const API_BASE = "https://line-oa.fangwl591021.workers.dev";
 const TOKEN_KEY = "lineoa_token";
+const SETTINGS_KEY = "lineoa_integration_settings";
 
 chrome.runtime.onInstalled.addListener(() => {
   console.info("LINEOA test extension installed");
@@ -60,6 +61,27 @@ async function handleMessage(message) {
     return apiRequest("/api/knowledge", { token });
   }
 
+  if (type === "lineoa:settings:get") {
+    return settingsSummary(await getIntegrationSettings());
+  }
+
+  if (type === "lineoa:settings:save") {
+    const current = await getIntegrationSettings();
+    const settings = sanitizeIntegrationSettings(message.body, current);
+    await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+    return settingsSummary(settings);
+  }
+
+  if (type === "lineoa:settings:clear") {
+    await chrome.storage.local.remove(SETTINGS_KEY);
+    return settingsSummary({});
+  }
+
+  if (type === "lineoa:settings:open") {
+    await chrome.runtime.openOptionsPage();
+    return { ok: true };
+  }
+
   if (type === "lineoa:health") {
     return apiRequest("/health");
   }
@@ -100,6 +122,41 @@ function sanitizeAuthBody(input, mode) {
     body.companyName = String(input?.companyName || "").trim().slice(0, 120);
   }
   return body;
+}
+
+async function getIntegrationSettings() {
+  const stored = await chrome.storage.local.get(SETTINGS_KEY);
+  const value = stored[SETTINGS_KEY];
+  return value && typeof value === "object" ? value : {};
+}
+
+function sanitizeIntegrationSettings(input, current) {
+  const next = {
+    lineLoginChannelId: String(input?.lineLoginChannelId || "").trim().slice(0, 80),
+    lineLoginChannelSecret: String(current?.lineLoginChannelSecret || ""),
+    lineBotChannelAccessToken: String(current?.lineBotChannelAccessToken || ""),
+    lineBotChannelSecret: String(current?.lineBotChannelSecret || "")
+  };
+  for (const field of ["lineLoginChannelSecret", "lineBotChannelAccessToken", "lineBotChannelSecret"]) {
+    const limit = field === "lineBotChannelAccessToken" ? 5000 : 200;
+    const value = String(input?.[field] || "").trim();
+    if (value) next[field] = value.slice(0, limit);
+  }
+  return next;
+}
+
+function settingsSummary(settings) {
+  return {
+    ok: true,
+    values: {
+      lineLoginChannelId: String(settings?.lineLoginChannelId || "")
+    },
+    configured: {
+      lineLoginChannelSecret: Boolean(settings?.lineLoginChannelSecret),
+      lineBotChannelAccessToken: Boolean(settings?.lineBotChannelAccessToken),
+      lineBotChannelSecret: Boolean(settings?.lineBotChannelSecret)
+    }
+  };
 }
 
 async function getToken() {

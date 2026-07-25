@@ -115,6 +115,23 @@ test("content script inserts one isolated panel and switches modes without touch
   assert.match(root.innerHTML, /lineoa-admin-sidebar/);
   assert.match(root.innerHTML, /工作總覽/);
   assert.match(root.innerHTML, /聊天室監控/);
+  assert.match(root.innerHTML, /data-action="toggle-admin-group"/);
+  await listeners.get("click")({
+    target: {
+      closest() {
+        return { dataset: { action: "toggle-admin-group", group: "service" } };
+      }
+    }
+  });
+  assert.doesNotMatch(root.innerHTML, /data-view="monitor"/);
+  await listeners.get("click")({
+    target: {
+      closest() {
+        return { dataset: { action: "toggle-admin-group", group: "service" } };
+      }
+    }
+  });
+  assert.match(root.innerHTML, /data-view="monitor"/);
   assert.equal(hostPage.mutations, 0);
 });
 

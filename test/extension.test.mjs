@@ -6,12 +6,14 @@ const manifest = JSON.parse(readFileSync(new URL("../extension/manifest.json", i
 const background = readFileSync(new URL("../extension/background.js", import.meta.url), "utf8");
 const content = readFileSync(new URL("../extension/content.js", import.meta.url), "utf8");
 const popup = readFileSync(new URL("../extension/popup.js", import.meta.url), "utf8");
+const optionsHtml = readFileSync(new URL("../extension/options.html", import.meta.url), "utf8");
+const optionsJs = readFileSync(new URL("../extension/options.js", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../extension/styles.css", import.meta.url), "utf8");
 const testing = readFileSync(new URL("../extension/TESTING.md", import.meta.url), "utf8");
 
 test("extension uses a narrow Manifest V3 boundary", () => {
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.1.5");
+  assert.equal(manifest.version, "0.1.6");
   assert.deepEqual(manifest.permissions, ["storage", "activeTab"]);
   assert.deepEqual(manifest.host_permissions, ["https://line-oa.fangwl591021.workers.dev/*"]);
   assert.deepEqual(manifest.content_scripts[0].matches, [
@@ -20,8 +22,22 @@ test("extension uses a narrow Manifest V3 boundary", () => {
   ]);
   assert.equal(manifest.content_scripts[0].all_frames, undefined);
   assert.equal(manifest.action.default_popup, "popup.html");
+  assert.deepEqual(manifest.options_ui, { page: "options.html", open_in_tab: true });
   assert.doesNotMatch(background, /chrome\.action\.onClicked/);
   assert.match(popup, /https:\/\/line-oa\.fangwl591021\.workers\.dev\/app/);
+});
+
+test("integration settings stay in the private extension surface", () => {
+  assert.match(optionsHtml, /LINE Login Channel ID/);
+  assert.match(optionsHtml, /LINE Login Channel secret/);
+  assert.match(optionsHtml, /LINE Bot Channel access token/);
+  assert.match(optionsHtml, /LINE Bot Channel secret/);
+  assert.match(optionsHtml, /type="password"/);
+  assert.match(background, /lineoa_integration_settings/);
+  assert.match(background, /settingsSummary/);
+  assert.match(background, /openOptionsPage/);
+  assert.doesNotMatch(optionsJs, /console\./);
+  assert.doesNotMatch(content, /lineBotChannelAccessToken|lineLoginChannelSecret/);
 });
 
 test("session token remains behind the extension background worker", () => {
@@ -54,6 +70,8 @@ test("content workflow follows the active chat and has three display modes", () 
   assert.match(content, /聊天室監控/);
   assert.match(content, /知識庫/);
   assert.match(content, /帳戶方案/);
+  assert.match(content, /toggle-admin-group/);
+  assert.match(content, /串接設定/);
   assert.doesNotMatch(content, /action\.fangwl591021\.workers\.dev/);
 });
 
