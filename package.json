@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check src/worker.js && node --check extension/background.js && node --check extension/content.js && node --check extension/popup.js && node --check extension/options.js && node --test test/*.test.mjs",
+    "check": "node --check src/worker.js && node --check src/rich-menu-feature.js && node --check extension/background.js && node --check extension/rich-menu-background.js && node --check extension/content.js && node --check extension/popup.js && node --check extension/options.js && node --check extension/menu.js && node --test test/*.test.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
   },

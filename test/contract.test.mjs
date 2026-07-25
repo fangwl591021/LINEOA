@@ -4,6 +4,8 @@ import fs from "node:fs";
 
 const worker = fs.readFileSync(new URL("../src/worker.js", import.meta.url), "utf8");
 const schema = fs.readFileSync(new URL("../migrations/0001_initial.sql", import.meta.url), "utf8");
+const richMenuMigration = fs.readFileSync(new URL("../migrations/0002_rich_menu_entitlements.sql", import.meta.url), "utf8");
+const richMenuFeature = fs.readFileSync(new URL("../src/rich-menu-feature.js", import.meta.url), "utf8");
 const config = fs.readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
 const readme = fs.readFileSync(new URL("../README.md", import.meta.url), "utf8");
 
@@ -41,3 +43,12 @@ test("registration and knowledge tables exist", () => {
   assert.match(schema, /CREATE TABLE IF NOT EXISTS knowledge_items/);
 });
 
+test("rich menu trial and annual entitlement contract is present", () => {
+  assert.match(richMenuMigration, /CREATE TABLE IF NOT EXISTS feature_entitlements/);
+  assert.match(richMenuFeature, /TRIAL_DAYS = 30/);
+  assert.match(richMenuFeature, /ANNUAL_PRICE_TWD = 199/);
+  assert.match(richMenuFeature, /\/api\/features\/rich-menu\/deploy-authorize/);
+  assert.match(richMenuFeature, /rich_menu\.subscription\.activate/);
+  assert.match(richMenuFeature, /subscription_ends_at/);
+  assert.match(worker, /handleRichMenuFeature/);
+});

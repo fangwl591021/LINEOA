@@ -8,14 +8,22 @@ const content = readFileSync(new URL("../extension/content.js", import.meta.url)
 const popup = readFileSync(new URL("../extension/popup.js", import.meta.url), "utf8");
 const optionsHtml = readFileSync(new URL("../extension/options.html", import.meta.url), "utf8");
 const optionsJs = readFileSync(new URL("../extension/options.js", import.meta.url), "utf8");
+const menuHtml = readFileSync(new URL("../extension/menu.html", import.meta.url), "utf8");
+const menuJs = readFileSync(new URL("../extension/menu.js", import.meta.url), "utf8");
+const richMenuBackground = readFileSync(new URL("../extension/rich-menu-background.js", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../extension/styles.css", import.meta.url), "utf8");
 const testing = readFileSync(new URL("../extension/TESTING.md", import.meta.url), "utf8");
 
 test("extension uses a narrow Manifest V3 boundary", () => {
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.1.7");
+  assert.equal(manifest.version, "0.1.8");
   assert.deepEqual(manifest.permissions, ["storage", "activeTab"]);
-  assert.deepEqual(manifest.host_permissions, ["https://line-oa.fangwl591021.workers.dev/*"]);
+  assert.deepEqual(manifest.host_permissions, [
+    "https://line-oa.fangwl591021.workers.dev/*",
+    "https://api.line.me/*",
+    "https://api-data.line.me/*"
+  ]);
+  assert.equal(manifest.background.type, "module");
   assert.deepEqual(manifest.content_scripts[0].matches, [
     "https://manager.line.biz/*",
     "https://chat.line.biz/*"
@@ -46,6 +54,21 @@ test("integration settings stay in the private extension surface", () => {
   assert.match(optionsJs, /populateFields\(response\.values\)/);
   assert.doesNotMatch(optionsJs, /console\./);
   assert.doesNotMatch(content, /lineBotChannelAccessToken|lineLoginChannelSecret/);
+});
+
+test("rich menu editor uses a private token path and paid entitlement", () => {
+  assert.match(optionsHtml, /圖文選單上傳/);
+  assert.match(menuHtml, /2500×843/);
+  assert.match(menuHtml, /30 天試用/);
+  assert.match(menuHtml, /NT\$199／年/);
+  assert.match(menuJs, /lineoa:rich-menu:entitlement/);
+  assert.match(menuJs, /lineoa:rich-menu:deploy/);
+  assert.doesNotMatch(menuJs, /lineBotChannelAccessToken|authorization/i);
+  assert.match(richMenuBackground, /api-data\.line\.me/);
+  assert.match(richMenuBackground, /deploy-authorize/);
+  assert.match(richMenuBackground, /requireMenuPage/);
+  assert.match(richMenuBackground, /MAX_IMAGE_BYTES = 1024 \* 1024/);
+  assert.doesNotMatch(richMenuBackground, /console\./);
 });
 
 test("session token remains behind the extension background worker", () => {

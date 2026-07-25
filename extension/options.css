@@ -275,3 +275,29 @@ button.secondary {
   border: 1px solid #cbd5e1;
   color: #475569;
 }
+
+.rich-menu-entry {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #6366f1;
+  border-radius: 9px;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  padding: 16px 18px;
+}
+
+.rich-menu-entry p {
+  color: #64748b;
+  margin: 4px 0 0;
+}
+
+.rich-menu-entry a {
+  background: #4f46e5;
+  border-radius: 7px;
+  color: #fff;
+  font-weight: 800;
+  padding: 11px 15px;
+  text-decoration: none;
+}

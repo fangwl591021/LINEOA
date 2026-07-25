@@ -53,3 +53,10 @@ test/                     契約測試
 5. 執行 `wrangler deploy`
 
 正式網址預計為 `https://line-oa.fangwl591021.workers.dev/`。
+
+## 圖文選單付費功能
+
+- 擴充功能提供 `menu.html` 圖文選單編輯器，支援上傳 LINE 規格圖片、劃定 URI／文字／Postback 區域並部署。
+- 首次開啟圖文選單時開始 30 天試用。
+- 試用結束後年費為 NT$199；管理員可在確認收款後透過受保護的啟用 API 延長一年。
+- LINE Bot Channel access token 僅保存在 Chrome 擴充功能儲存空間，部署時由背景程式直接送往 LINE API，不寫入 D1。

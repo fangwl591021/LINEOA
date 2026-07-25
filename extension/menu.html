@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LINEOA 圖文選單</title>
+  <link rel="stylesheet" href="menu.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <a href="options.html" class="back">← 返回串接設定</a>
+      <h1>圖文選單編輯器</h1>
+      <p>從宏學圖文選單流程移植，使用您自己的 LINE Bot token 部署。</p>
+    </div>
+    <div class="entitlement-wrap">
+      <div id="entitlement" class="entitlement pending">正在確認 30 天試用資格…</div>
+      <a href="https://line-oa.fangwl591021.workers.dev/app" target="_blank" rel="noreferrer">方案與開通</a>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="editor-panel">
+      <section>
+        <h2>1. 選單底圖</h2>
+        <label class="upload-button">
+          選擇 JPG／PNG
+          <input id="image-upload" type="file" accept="image/jpeg,image/png">
+        </label>
+        <small>必須為 2500×843 或 2500×1686，檔案不超過 1 MB。</small>
+      </section>
+
+      <section>
+        <h2>2. 基本資料</h2>
+        <label>選單名稱<input id="menu-name" maxlength="300" value="LINEOA Rich Menu"></label>
+        <label>選單列文字<input id="chatbar-text" maxlength="14" value="選單"></label>
+      </section>
+
+      <section>
+        <h2>3. 劃定點擊區域</h2>
+        <div class="button-row">
+          <button id="draw-mode" class="primary" type="button">開始劃定區域</button>
+          <button id="clear-areas" type="button">清除區域</button>
+        </div>
+        <small>啟用後，在圖片上拖曳建立點擊區域，最多 20 區。</small>
+      </section>
+
+      <section>
+        <h2>4. 區域動作</h2>
+        <div id="areas" class="areas"><p class="empty">尚未建立區域</p></div>
+      </section>
+
+      <section class="local-actions">
+        <button id="save-draft" type="button">儲存本機草稿</button>
+        <button id="load-draft" type="button">載入本機草稿</button>
+      </section>
+    </aside>
+
+    <section class="canvas-panel">
+      <div id="notice" class="notice">請先上傳選單底圖。</div>
+      <div class="canvas-wrap">
+        <canvas id="menu-canvas" width="1000" height="337"></canvas>
+        <div id="placeholder" class="placeholder">上傳圖片後即可劃定點擊區域</div>
+      </div>
+      <div class="deploy-bar">
+        <div>
+          <strong>圖文選單部署</strong>
+          <span>試用 30 天；試用後 NT$199／年。部署會直接更新官方帳號的預設圖文選單。</span>
+        </div>
+        <button id="deploy" class="deploy" type="button" disabled>部署至 LINE</button>
+      </div>
+    </section>
+  </main>
+
+  <template id="area-template">
+    <article class="area-card">
+      <div class="area-head"><strong></strong><button type="button" data-remove>刪除</button></div>
+      <label>動作
+        <select data-field="type">
+          <option value="uri">開啟網址</option>
+          <option value="message">傳送文字</option>
+          <option value="postback">Postback</option>
+        </select>
+      </label>
+      <label data-value-label>網址<input data-field="value" placeholder="https://"></label>
+      <label class="display-text hidden">顯示文字<input data-field="displayText" maxlength="300" placeholder="點擊後顯示的文字"></label>
+    </article>
+  </template>
+  <script src="menu.js"></script>
+</body>
+</html>
