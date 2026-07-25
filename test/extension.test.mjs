@@ -13,7 +13,7 @@ const testing = readFileSync(new URL("../extension/TESTING.md", import.meta.url)
 
 test("extension uses a narrow Manifest V3 boundary", () => {
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.1.6");
+  assert.equal(manifest.version, "0.1.7");
   assert.deepEqual(manifest.permissions, ["storage", "activeTab"]);
   assert.deepEqual(manifest.host_permissions, ["https://line-oa.fangwl591021.workers.dev/*"]);
   assert.deepEqual(manifest.content_scripts[0].matches, [
@@ -34,8 +34,16 @@ test("integration settings stay in the private extension surface", () => {
   assert.match(optionsHtml, /LINE Bot Channel secret/);
   assert.match(optionsHtml, /type="password"/);
   assert.match(background, /lineoa_integration_settings/);
-  assert.match(background, /settingsSummary/);
+  assert.match(background, /settingsView/);
+  assert.match(background, /requireOptionsPage/);
+  assert.match(background, /chrome\.runtime\.getURL\("options\.html"\)/);
   assert.match(background, /openOptionsPage/);
+  assert.match(optionsHtml, /取消並返回/);
+  assert.match(optionsHtml, /data-toggle-secret/);
+  assert.match(optionsHtml, /class="validation invalid"/);
+  assert.match(optionsJs, /格式不正確/);
+  assert.match(optionsJs, /window\.history\.back|window\.close/);
+  assert.match(optionsJs, /populateFields\(response\.values\)/);
   assert.doesNotMatch(optionsJs, /console\./);
   assert.doesNotMatch(content, /lineBotChannelAccessToken|lineLoginChannelSecret/);
 });

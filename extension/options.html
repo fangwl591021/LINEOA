@@ -31,11 +31,15 @@
           <label>
             <span>LINE Login Channel ID</span>
             <input id="line-login-channel-id" name="lineLoginChannelId" inputmode="numeric" maxlength="80" placeholder="例如：2001234567">
+            <small id="line-login-channel-id-state" class="validation invalid">尚未填寫</small>
           </label>
           <label>
             <span>LINE Login Channel secret</span>
-            <input id="line-login-channel-secret" name="lineLoginChannelSecret" type="password" maxlength="200" placeholder="留空會保留已儲存的 secret">
-            <small id="line-login-secret-state">尚未設定</small>
+            <span class="secret-input">
+              <input id="line-login-channel-secret" name="lineLoginChannelSecret" type="password" maxlength="200" autocomplete="off" spellcheck="false" placeholder="32 字元 Channel secret">
+              <button type="button" data-toggle-secret="line-login-channel-secret" aria-label="顯示 LINE Login Channel secret">顯示</button>
+            </span>
+            <small id="line-login-secret-state" class="validation invalid">尚未填寫</small>
           </label>
         </div>
       </details>
@@ -45,25 +49,34 @@
         <div class="fields">
           <label>
             <span>LINE Bot Channel access token</span>
-            <textarea id="line-bot-access-token" name="lineBotChannelAccessToken" rows="4" maxlength="5000" placeholder="留空會保留已儲存的 access token"></textarea>
-            <small id="line-bot-token-state">尚未設定</small>
+            <span class="secret-input">
+              <input id="line-bot-access-token" name="lineBotChannelAccessToken" type="password" maxlength="5000" autocomplete="off" spellcheck="false" placeholder="Messaging API Channel access token">
+              <button type="button" data-toggle-secret="line-bot-access-token" aria-label="顯示 LINE Bot Channel access token">顯示</button>
+            </span>
+            <small id="line-bot-token-state" class="validation invalid">尚未填寫</small>
           </label>
           <label>
             <span>LINE Bot Channel secret</span>
-            <input id="line-bot-channel-secret" name="lineBotChannelSecret" type="password" maxlength="200" placeholder="留空會保留已儲存的 secret">
-            <small id="line-bot-secret-state">尚未設定</small>
+            <span class="secret-input">
+              <input id="line-bot-channel-secret" name="lineBotChannelSecret" type="password" maxlength="200" autocomplete="off" spellcheck="false" placeholder="32 字元 Channel secret">
+              <button type="button" data-toggle-secret="line-bot-channel-secret" aria-label="顯示 LINE Bot Channel secret">顯示</button>
+            </span>
+            <small id="line-bot-secret-state" class="validation invalid">尚未填寫</small>
           </label>
         </div>
       </details>
 
       <section class="security-note">
         <strong>安全說明</strong>
-        <p>既有 secret/token 不會回填到表單，也不會出現在紀錄中。此版本只提供安全保管與設定入口，不會自動傳送 LINE 訊息。</p>
+        <p>參數只會顯示在擴充功能私有設定頁，Secret／Token 預設遮蔽。欄位狀態只檢查 LINE 常用格式，不代表已向 LINE 伺服器驗證成功。</p>
       </section>
 
       <div class="actions">
         <button id="clear-settings" class="danger" type="button">清除所有串接參數</button>
-        <button class="primary" type="submit">儲存設定</button>
+        <span>
+          <button id="cancel-settings" class="secondary" type="button">取消並返回</button>
+          <button class="primary" type="submit">儲存設定</button>
+        </span>
       </div>
     </form>
   </main>

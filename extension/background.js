@@ -14,13 +14,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  handleMessage(message)
+  handleMessage(message, sender)
     .then(sendResponse)
     .catch((error) => sendResponse({ ok: false, message: error.message || "擴充功能暫時無法處理" }));
   return true;
 });
 
-async function handleMessage(message) {
+async function handleMessage(message, sender) {
   const type = String(message?.type || "");
 
   if (type === "lineoa:session") {
@@ -62,19 +62,22 @@ async function handleMessage(message) {
   }
 
   if (type === "lineoa:settings:get") {
-    return settingsSummary(await getIntegrationSettings());
+    requireOptionsPage(sender);
+    return settingsView(await getIntegrationSettings());
   }
 
   if (type === "lineoa:settings:save") {
+    requireOptionsPage(sender);
     const current = await getIntegrationSettings();
     const settings = sanitizeIntegrationSettings(message.body, current);
     await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
-    return settingsSummary(settings);
+    return settingsView(settings);
   }
 
   if (type === "lineoa:settings:clear") {
+    requireOptionsPage(sender);
     await chrome.storage.local.remove(SETTINGS_KEY);
-    return settingsSummary({});
+    return settingsView({});
   }
 
   if (type === "lineoa:settings:open") {
@@ -145,16 +148,20 @@ function sanitizeIntegrationSettings(input, current) {
   return next;
 }
 
-function settingsSummary(settings) {
+function requireOptionsPage(sender) {
+  const optionsUrl = chrome.runtime.getURL("options.html");
+  const senderUrl = String(sender?.url || "").split(/[?#]/, 1)[0];
+  if (senderUrl !== optionsUrl) throw new Error("串接參數只能由擴充功能設定頁存取");
+}
+
+function settingsView(settings) {
   return {
     ok: true,
     values: {
-      lineLoginChannelId: String(settings?.lineLoginChannelId || "")
-    },
-    configured: {
-      lineLoginChannelSecret: Boolean(settings?.lineLoginChannelSecret),
-      lineBotChannelAccessToken: Boolean(settings?.lineBotChannelAccessToken),
-      lineBotChannelSecret: Boolean(settings?.lineBotChannelSecret)
+      lineLoginChannelId: String(settings?.lineLoginChannelId || ""),
+      lineLoginChannelSecret: String(settings?.lineLoginChannelSecret || ""),
+      lineBotChannelAccessToken: String(settings?.lineBotChannelAccessToken || ""),
+      lineBotChannelSecret: String(settings?.lineBotChannelSecret || "")
     }
   };
 }
