@@ -16,6 +16,8 @@
     usage: null,
     messages: [],
     suggestions: [],
+    contact: { uid: "", name: "", avatarUrl: "" },
+    conversationKey: "",
     loading: true,
     notice: ""
   };
@@ -41,6 +43,7 @@
       await chrome.storage.local.set({ [MODE_KEY]: "float", [LAYOUT_VERSION_KEY]: LAYOUT_VERSION });
     }
     await restoreSession();
+    startConversationTracking();
   }
 
   async function restoreSession() {
@@ -124,6 +127,7 @@
       state.limits = result.limits;
       await loadKnowledge();
       state.notice = "登入成功，知識庫已同步";
+      if (state.conversationKey) scanVisibleConversation({ automatic: true });
     } catch (error) {
       state.notice = error.message;
     } finally {
@@ -164,13 +168,123 @@
     }
   }
 
-  function scanVisibleConversation() {
+  function scanVisibleConversation(options = {}) {
     state.messages = collectVisibleMessages();
     state.suggestions = rankSuggestions(state.messages, state.knowledge);
+    const prefix = options.automatic ? "已自動跟隨目前聊天室，" : "";
     state.notice = state.messages.length
-      ? `已在本機比對 ${state.messages.length} 則目前可見文字，沒有傳送聊天內容`
-      : "找不到可見訊息；請先開啟 LINE OA 聊天室並顯示對話";
+      ? `${prefix}在本機比對 ${state.messages.length} 則目前可見文字，沒有傳送聊天內容`
+      : "找不到可見訊息；請確認目前已開啟一對一聊天室";
     render();
+  }
+
+  let conversationCheckTimer = 0;
+  let lastObservedHref = "";
+
+  function startConversationTracking() {
+    if (typeof location === "undefined" || location.hostname !== "chat.line.biz") return;
+    lastObservedHref = String(location.href || "");
+    checkActiveConversation(true);
+
+    const observer = new MutationObserver(() => scheduleConversationCheck());
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["src", "aria-selected"]
+    });
+
+    setInterval(() => {
+      const currentHref = String(location.href || "");
+      if (currentHref === lastObservedHref) return;
+      lastObservedHref = currentHref;
+      scheduleConversationCheck();
+    }, 700);
+  }
+
+  function scheduleConversationCheck() {
+    clearTimeout(conversationCheckTimer);
+    conversationCheckTimer = setTimeout(() => checkActiveConversation(false), 350);
+  }
+
+  function checkActiveConversation(force) {
+    const next = readActiveContact();
+    const nextKey = next.uid || `${next.name}|${next.avatarUrl}`;
+    if (!nextKey) return;
+
+    const profileChanged = next.uid !== state.contact.uid
+      || next.name !== state.contact.name
+      || next.avatarUrl !== state.contact.avatarUrl;
+    const conversationChanged = force || nextKey !== state.conversationKey;
+    state.contact = next;
+    if (!conversationChanged) {
+      if (profileChanged) render();
+      return;
+    }
+
+    state.conversationKey = nextKey;
+    state.messages = [];
+    state.suggestions = [];
+    state.notice = `已切換至 ${next.name || "目前聯絡人"}，正在自動讀取目前對話`;
+    render();
+    if (state.user) setTimeout(() => scanVisibleConversation({ automatic: true }), 450);
+  }
+
+  function readActiveContact() {
+    const uid = readUidFromLocation();
+    const panelLeft = state.mode === "side"
+      ? (root?.getBoundingClientRect?.().left || innerWidth)
+      : innerWidth;
+    const chatLeft = Math.min(520, innerWidth * 0.24);
+    const inHeaderBand = (element) => {
+      if (!element || element.closest?.(`#${ROOT_ID}`) || !isVisibleInViewport(element)) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.left >= chatLeft && rect.right < panelLeft && rect.top >= 55 && rect.bottom <= 200;
+    };
+
+    const avatars = Array.from(document.querySelectorAll("img"))
+      .filter(inHeaderBand)
+      .filter((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.width >= 24 && rect.width <= 80 && rect.height >= 24 && rect.height <= 80;
+      })
+      .sort((left, right) => left.getBoundingClientRect().left - right.getBoundingClientRect().left);
+    const avatar = avatars[0] || null;
+    const avatarUrl = safeAvatarUrl(avatar?.currentSrc || avatar?.src || "");
+    const avatarRect = avatar?.getBoundingClientRect?.() || null;
+
+    const nameCandidates = Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"], strong, span, div'))
+      .filter(inHeaderBand)
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const text = normalizeDisplayText(element.innerText || element.textContent || element.getAttribute?.("aria-label") || "");
+        const distance = avatarRect
+          ? Math.abs(rect.left - avatarRect.right) + Math.abs((rect.top + rect.bottom) / 2 - (avatarRect.top + avatarRect.bottom) / 2)
+          : rect.left - chatLeft;
+        return { element, rect, text, distance };
+      })
+      .filter((item) => item.text && item.text.length <= 80 && item.rect.height <= 70 && item.element.childElementCount <= 3)
+      .filter((item) => !isInterfaceText(item.text) && !/^(LINE|Official Account|Manager)$/i.test(item.text))
+      .sort((left, right) => left.distance - right.distance || left.rect.left - right.rect.left);
+    const name = nameCandidates[0]?.text || "";
+    return { uid, name, avatarUrl };
+  }
+
+  function readUidFromLocation() {
+    if (typeof location === "undefined") return "";
+    const match = String(location.pathname || "").match(/\/chat\/([^/?#]+)/i);
+    if (!match) return "";
+    try {
+      const value = decodeURIComponent(match[1]);
+      return /^[A-Za-z0-9_-]{8,128}$/.test(value) ? value : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function safeAvatarUrl(value) {
+    const url = String(value || "").trim();
+    return /^(https?:|blob:|data:image\/)/i.test(url) ? url : "";
   }
 
   async function copySuggestion(index) {
@@ -341,7 +455,7 @@
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.4</small></div>
+          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.5</small></div>
           <nav aria-label="顯示模式">
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
             <button type="button" data-action="mode" data-mode="full" title="開啟管理全版">□</button>
@@ -371,7 +485,7 @@
     return `
       <section class="lineoa-admin-shell" aria-live="polite">
         <aside class="lineoa-admin-sidebar">
-          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.4</small></div></div>
+          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.5</small></div></div>
           <nav>
             <div class="lineoa-admin-group">📦 服務中心</div>
             ${navItem("overview", "▦", "工作總覽")}
@@ -429,7 +543,7 @@
       ${noticeView()}
       <div class="lineoa-admin-grid">
         <section class="lineoa-admin-card">
-          <div class="lineoa-admin-card-title"><div><h3>聊天室監控</h3><p>手動讀取目前可見對話並與知識庫比對</p></div><span>客服工具</span></div>
+          <div class="lineoa-admin-card-title"><div><h3>聊天室監控</h3><p>切換聯絡人後自動讀取目前對話並與知識庫比對</p></div><span>客服工具</span></div>
           <div class="lineoa-admin-quick">
             <button class="lineoa-primary" type="button" data-action="admin-view" data-view="monitor">進入聊天室監控</button>
             <button type="button" data-action="scan">立即讀取並比對</button>
@@ -444,17 +558,18 @@
         </section>
       </div>
       <section class="lineoa-admin-card lineoa-admin-activity">
-        <div class="lineoa-admin-card-title"><div><h3>使用說明</h3><p>LINEOA 僅在你操作時執行</p></div></div>
+        <div class="lineoa-admin-card-title"><div><h3>使用說明</h3><p>LINEOA 自動跟隨目前聊天室</p></div></div>
         <div class="lineoa-admin-table-row"><strong>隱私保護</strong><span>不讀取 Cookie、LINE Token，也不會自動發送訊息</span><em>安全</em></div>
-        <div class="lineoa-admin-table-row"><strong>聊天室監控</strong><span>只讀取目前畫面中可見的對話文字</span><em>手動</em></div>
+        <div class="lineoa-admin-table-row"><strong>聊天室監控</strong><span>切換聯絡人後讀取目前畫面可見文字</span><em>自動</em></div>
       </section>`;
   }
 
   function fullMonitorView() {
     return `
+      ${contactView("wide")}
       <div class="lineoa-admin-toolbar">
-        <div><strong>客服對話分析</strong><span>讀取目前聊天室可見訊息，於本機比對知識庫</span></div>
-        <div><button type="button" data-action="sync">同步知識庫</button><button class="lineoa-primary" type="button" data-action="scan">讀取目前可見對話並比對</button></div>
+        <div><strong>客服對話分析</strong><span>自動跟隨目前聊天室可見訊息，於本機比對知識庫</span></div>
+        <div><button type="button" data-action="sync">同步知識庫</button><button class="lineoa-primary" type="button" data-action="scan">重新讀取目前聊天室</button></div>
       </div>
       ${noticeView()}
       <div class="lineoa-monitor-layout">
@@ -467,7 +582,7 @@
           ${state.suggestions.length ? state.suggestions.map((item, index) => suggestionCard(item, index)).join("") : emptyCard(state.messages.length ? "知識庫中沒有相近答案" : "讀取對話後顯示建議")}
         </section>
       </div>
-      <div class="lineoa-privacy-note">只有你按下按鈕時，才會讀取畫面目前可見文字；比對在瀏覽器內完成，不會自動發送。</div>`;
+      <div class="lineoa-privacy-note">切換聊天室後會自動讀取畫面目前可見文字；比對在瀏覽器內完成，不會自動發送。</div>`;
   }
 
   function fullKnowledgeView(current, limit) {
@@ -546,11 +661,12 @@
         <div><strong>${escapeHtml(state.user.displayName || state.user.email)}</strong><small>免費版 · ${state.usage?.current || 0}/${state.usage?.limit || state.limits?.knowledgeItems || 100} 筆知識</small></div>
         <button type="button" data-action="logout">登出</button>
       </div>
+      ${contactView()}
       <div class="lineoa-actions">
-        <button class="lineoa-primary" type="button" data-action="scan">讀取目前可見對話並比對</button>
+        <button class="lineoa-primary" type="button" data-action="scan">重新讀取目前聊天室</button>
         <button type="button" data-action="sync">同步知識庫</button>
       </div>
-      <div class="lineoa-privacy-note">只有你按下按鈕時，才會讀取畫面目前可見文字；比對在瀏覽器內完成，不讀取 Cookie、LINE Token，也不會自動發送。</div>
+      <div class="lineoa-privacy-note">切換聊天室後會自動讀取畫面目前可見文字；比對在瀏覽器內完成，不讀取 Cookie、LINE Token，也不會自動發送。</div>
       ${noticeView()}
       <section class="lineoa-section">
         <h3>目前可見文字 <span>${state.messages.length}/${MESSAGE_LIMIT}</span></h3>
@@ -561,6 +677,23 @@
         ${state.suggestions.length ? state.suggestions.map((item, index) => suggestionCard(item, index)).join("") : emptyCard(state.messages.length ? "知識庫中沒有相近答案" : "讀取對話後顯示建議")}
       </section>
       <a class="lineoa-manage" href="https://line-oa.fangwl591021.workers.dev/app" target="_blank" rel="noreferrer">管理我的知識庫 ↗</a>`;
+  }
+
+  function contactView(extraClass = "") {
+    const contact = state.contact;
+    if (!contact.uid && !contact.name && !contact.avatarUrl) {
+      return `<section class="lineoa-contact-card ${extraClass} empty"><span class="lineoa-contact-avatar">?</span><div><strong>尚未選擇聯絡人</strong><small>請從左側切換聊天室</small></div></section>`;
+    }
+    const label = contact.name || "目前聯絡人";
+    const initial = Array.from(label)[0] || "?";
+    return `
+      <section class="lineoa-contact-card ${extraClass}">
+        ${contact.avatarUrl
+          ? `<img class="lineoa-contact-avatar" src="${escapeHtml(contact.avatarUrl)}" alt="" referrerpolicy="no-referrer">`
+          : `<span class="lineoa-contact-avatar">${escapeHtml(initial)}</span>`}
+        <div><strong>${escapeHtml(label)}</strong><small>LINE UID <code>${escapeHtml(contact.uid || "未取得")}</code></small></div>
+        <em>自動跟隨</em>
+      </section>`;
   }
 
   function suggestionCard(item, index) {
