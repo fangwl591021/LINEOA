@@ -16,7 +16,7 @@ const testing = readFileSync(new URL("../extension/TESTING.md", import.meta.url)
 
 test("extension uses a narrow Manifest V3 boundary", () => {
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.1.11");
+  assert.equal(manifest.version, "0.1.12");
   assert.deepEqual(manifest.permissions, ["storage", "activeTab"]);
   assert.deepEqual(manifest.host_permissions, [
     "https://line-oa.fangwl591021.workers.dev/*",
@@ -92,7 +92,12 @@ test("session token remains behind the extension background worker", () => {
   assert.match(background, /referrerPolicy: "no-referrer"/);
   assert.doesNotMatch(content, /lineoa_token/);
   assert.doesNotMatch(content, /authorization/i);
-  assert.doesNotMatch(background, /contact|avatar|conversationKey/i);
+  assert.match(background, /lineoa:crm:upsert/);
+  assert.match(background, /sanitizeCrmCapture/);
+  assert.match(background, /requireLinePage/);
+  assert.doesNotMatch(background, /messages|conversationText|cookie/i);
+  assert.deepEqual(manifest.content_scripts[0].js, ["crm.js", "content.js"]);
+  assert.deepEqual(manifest.content_scripts[0].css, ["styles.css", "crm.css"]);
 });
 
 test("content workflow follows the active chat and has three display modes", () => {

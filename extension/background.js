@@ -66,6 +66,32 @@ async function handleMessage(message, sender) {
     return apiRequest("/api/knowledge", { token });
   }
 
+
+  if (type === "lineoa:crm:list") {
+    requireLinePage(sender);
+    const token = await requireToken();
+    return apiRequest("/api/crm/contacts", { token });
+  }
+
+  if (type === "lineoa:crm:upsert") {
+    requireLinePage(sender);
+    const token = await requireToken();
+    return apiRequest("/api/crm/contacts/upsert", {
+      method: "POST",
+      token,
+      body: sanitizeCrmCapture(message.body)
+    });
+  }
+
+  if (type === "lineoa:crm:update") {
+    requireLinePage(sender);
+    const token = await requireToken();
+    const id = String(message.id || "").trim().slice(0, 80);
+    if (!id) throw new Error("CRM 聯絡人識別碼無效");
+    return apiRequest(`/api/crm/contacts/${encodeURIComponent(id)}`, {
+      method: "PATCH", token, body: sanitizeCrmUpdate(message.body)
+    });
+  }
   if (type === "lineoa:settings:get") {
     requireOptionsPage(sender);
     return settingsView(await getIntegrationSettings());
@@ -150,6 +176,43 @@ function sanitizeIntegrationSettings(input, current) {
     const value = String(input?.[field] || "").trim();
     if (value) next[field] = value.slice(0, limit);
   }
+
+function sanitizeCrmCapture(input) {
+  const lineUid = String(input?.lineUid || "").trim().slice(0, 80);
+  if (!/^U[0-9a-f]{32}$/i.test(lineUid)) throw new Error("找不到有效的 LINE UID");
+  const avatarUrl = String(input?.avatarUrl || "").trim().slice(0, 1200);
+  if (avatarUrl && !avatarUrl.startsWith("https://")) throw new Error("客戶頭貼網址無效");
+  return {
+    lineUid,
+    displayName: String(input?.displayName || "").trim().slice(0, 120),
+    avatarUrl
+  };
+}
+
+function sanitizeCrmUpdate(input) {
+  return {
+    displayName: String(input?.displayName || "").trim().slice(0, 120),
+    phone: String(input?.phone || "").trim().slice(0, 40),
+    email: String(input?.email || "").trim().slice(0, 254),
+    tags: Array.isArray(input?.tags)
+      ? input.tags.map((tag) => String(tag || "").trim().slice(0, 40)).filter(Boolean).slice(0, 20)
+      : [],
+    notes: String(input?.notes || "").trim().slice(0, 3000),
+    status: input?.status === "archived" ? "archived" : "active"
+  };
+}
+
+function requireLinePage(sender) {
+  let url;
+  try {
+    url = new URL(String(sender?.url || ""));
+  } catch {
+    throw new Error("CRM 只能由 LINE 官方帳號管理頁使用");
+  }
+  if (url.protocol !== "https:" || !["chat.line.biz", "manager.line.biz"].includes(url.hostname)) {
+    throw new Error("CRM 只能由 LINE 官方帳號管理頁使用");
+  }
+}
   return next;
 }
 
