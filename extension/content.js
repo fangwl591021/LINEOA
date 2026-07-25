@@ -471,7 +471,7 @@
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.6</small></div>
+          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.7</small></div>
           <nav aria-label="顯示模式">
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
             <button type="button" data-action="mode" data-mode="full" title="開啟管理全版">□</button>
@@ -506,7 +506,7 @@
     return `
       <section class="lineoa-admin-shell" aria-live="polite">
         <aside class="lineoa-admin-sidebar">
-          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.6</small></div></div>
+          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.7</small></div></div>
           <nav>
             ${groupHeader("service", "📦", "服務中心")}
             ${state.adminGroups.service ? `

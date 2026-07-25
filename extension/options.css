@@ -205,6 +205,7 @@ textarea:focus {
 .security-note p { color: #64748b; margin: 4px 0 0; }
 
 .actions {
+  align-items: center;
   display: flex;
   justify-content: space-between;
 }
@@ -234,4 +235,43 @@ button.danger {
   main { margin-left: 0; }
   header { align-items: flex-start; gap: 12px; }
   form { padding: 16px; }
+}
+
+.secret-input {
+  display: flex;
+  position: relative;
+}
+
+.secret-input input {
+  padding-right: 68px;
+}
+
+.secret-input button {
+  background: transparent;
+  border: 0;
+  color: #64748b;
+  height: 100%;
+  padding: 0 14px;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+label > small.validation.invalid {
+  color: #dc2626;
+}
+
+label > small.validation.valid {
+  color: #15803d;
+}
+
+.actions > span {
+  display: flex;
+  gap: 10px;
+}
+
+button.secondary {
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  color: #475569;
 }

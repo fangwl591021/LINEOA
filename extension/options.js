@@ -2,15 +2,48 @@
 
 const form = document.getElementById("integration-form");
 const statusBox = document.getElementById("status");
-const channelIdInput = document.getElementById("line-login-channel-id");
-const secretState = document.getElementById("line-login-secret-state");
-const tokenState = document.getElementById("line-bot-token-state");
-const botSecretState = document.getElementById("line-bot-secret-state");
+const fields = {
+  lineLoginChannelId: document.getElementById("line-login-channel-id"),
+  lineLoginChannelSecret: document.getElementById("line-login-channel-secret"),
+  lineBotChannelAccessToken: document.getElementById("line-bot-access-token"),
+  lineBotChannelSecret: document.getElementById("line-bot-channel-secret")
+};
+const stateElements = {
+  lineLoginChannelId: document.getElementById("line-login-channel-id-state"),
+  lineLoginChannelSecret: document.getElementById("line-login-secret-state"),
+  lineBotChannelAccessToken: document.getElementById("line-bot-token-state"),
+  lineBotChannelSecret: document.getElementById("line-bot-secret-state")
+};
+const validators = {
+  lineLoginChannelId: (value) => /^\d{10,20}$/.test(value),
+  lineLoginChannelSecret: (value) => /^[A-Za-z0-9]{32}$/.test(value),
+  lineBotChannelAccessToken: (value) => value.length >= 20 && !/\s/.test(value),
+  lineBotChannelSecret: (value) => /^[A-Za-z0-9]{32}$/.test(value)
+};
 
 loadSettings();
 
+for (const [name, input] of Object.entries(fields)) {
+  input.addEventListener("input", () => renderValidation(name));
+}
+
+for (const button of document.querySelectorAll("[data-toggle-secret]")) {
+  button.addEventListener("click", () => {
+    const input = document.getElementById(button.dataset.toggleSecret);
+    const showing = input.type === "text";
+    input.type = showing ? "password" : "text";
+    button.textContent = showing ? "顯示" : "隱藏";
+    button.setAttribute("aria-label", `${showing ? "顯示" : "隱藏"} ${input.name}`);
+  });
+}
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  renderAllValidation();
+  if (!Object.entries(fields).every(([name, input]) => validators[name](input.value.trim()))) {
+    setStatus("請先修正紅字標示的參數格式。", "error");
+    return;
+  }
   setStatus("正在儲存設定…");
   const data = new FormData(form);
   try {
@@ -23,8 +56,8 @@ form.addEventListener("submit", async (event) => {
         lineBotChannelSecret: data.get("lineBotChannelSecret")
       }
     });
-    clearSecretInputs();
-    renderState(response);
+    populateFields(response.values);
+    renderAllValidation();
     setStatus("串接參數已安全儲存在這個 Chrome 使用者中。", "success");
   } catch (error) {
     setStatus(error.message, "error");
@@ -36,35 +69,49 @@ document.getElementById("clear-settings").addEventListener("click", async () => 
   try {
     const response = await send({ type: "lineoa:settings:clear" });
     form.reset();
-    renderState(response);
+    populateFields(response.values);
+    renderAllValidation();
     setStatus("所有串接參數已清除。", "success");
   } catch (error) {
     setStatus(error.message, "error");
   }
 });
 
+document.getElementById("cancel-settings").addEventListener("click", () => {
+  if (window.history.length > 1) {
+    window.history.back();
+    return;
+  }
+  window.close();
+});
+
 async function loadSettings() {
   try {
     const response = await send({ type: "lineoa:settings:get" });
-    channelIdInput.value = response.values?.lineLoginChannelId || "";
-    renderState(response);
-    setStatus("已讀取設定狀態；既有 secret/token 不會顯示。", "success");
+    populateFields(response.values);
+    renderAllValidation();
+    setStatus("已讀取已儲存參數；Secret／Token 預設遮蔽。", "success");
   } catch (error) {
     setStatus(error.message, "error");
   }
 }
 
-function renderState(response) {
-  const configured = response.configured || {};
-  secretState.textContent = configured.lineLoginChannelSecret ? "已設定；留空可保留" : "尚未設定";
-  tokenState.textContent = configured.lineBotChannelAccessToken ? "已設定；留空可保留" : "尚未設定";
-  botSecretState.textContent = configured.lineBotChannelSecret ? "已設定；留空可保留" : "尚未設定";
+function populateFields(values = {}) {
+  for (const [name, input] of Object.entries(fields)) {
+    input.value = String(values[name] || "");
+  }
 }
 
-function clearSecretInputs() {
-  document.getElementById("line-login-channel-secret").value = "";
-  document.getElementById("line-bot-access-token").value = "";
-  document.getElementById("line-bot-channel-secret").value = "";
+function renderAllValidation() {
+  for (const name of Object.keys(fields)) renderValidation(name);
+}
+
+function renderValidation(name) {
+  const value = fields[name].value.trim();
+  const state = stateElements[name];
+  const valid = validators[name](value);
+  state.className = `validation ${valid ? "valid" : "invalid"}`;
+  state.textContent = valid ? "格式正確" : value ? "格式不正確" : "尚未填寫";
 }
 
 function setStatus(message, tone = "") {
