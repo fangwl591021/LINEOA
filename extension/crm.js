@@ -14,12 +14,15 @@
     notice: "",
     lastSyncKey: "",
     pendingUrlCapture: null,
+    batch: { running: false, discovered: 0, completed: 0, saved: 0, skipped: 0, failed: 0 },
+    batchController: null,
     timer: 0,
     render: () => {}
   };
 
-  async function init(render) {
+  async function init(render, batchController) {
     state.render = typeof render === "function" ? render : () => {};
+    state.batchController = batchController && typeof batchController === "object" ? batchController : null;
     const stored = await chrome.storage.local.get([AUTO_KEY, PENDING_URL_KEY]);
     state.autoCapture = stored[AUTO_KEY] === true;
     state.pendingUrlCapture = validPending(stored[PENDING_URL_KEY]);
@@ -78,7 +81,7 @@
     }, 1200);
   }
 
-  async function capture(contact, manual) {
+  async function capture(contact, manual, options = {}) {
     if (!state.authenticated) throw new Error("請先登入 LINEOA");
     if (location.hostname !== "chat.line.biz") throw new Error("請在 LINE OA 一對一聊天室中使用 CRM 擷取");
     const lineUid = String(contact?.uid || "");
@@ -96,11 +99,46 @@
     const index = state.contacts.findIndex((item) => item.id === result.contact.id);
     if (index >= 0) state.contacts.splice(index, 1, result.contact);
     else state.contacts.unshift(result.contact);
-    state.notice = result.created ? "已將目前客戶新增至 CRM" : "已更新目前客戶的 CRM 資料";
-    await load();
+    if (options.notice !== false) {
+      state.notice = result.created ? "已將目前客戶新增至 CRM" : "已更新目前客戶的 CRM 資料";
+    }
+    if (options.refresh !== false) await load();
+    return result;
   }
 
   async function handleClick(action, button, contact) {
+    if (action === "crm-batch-start") {
+      if (!state.batchController?.start) {
+        state.notice = "目前頁面無法啟動批次掃描，請在 chat.line.biz 聊天室使用";
+        state.render();
+        return true;
+      }
+      state.batch = { running: true, discovered: 0, completed: 0, saved: 0, skipped: 0, failed: 0 };
+      state.notice = "正在尋找左側聊天室，請保持這個 LINE OA 分頁開啟";
+      state.render();
+      try {
+        const result = await state.batchController.start((progress) => {
+          state.batch = { ...state.batch, ...progress, running: progress.running !== false };
+          state.render();
+        });
+        state.batch = { ...state.batch, ...result, running: false };
+        state.notice = result.cancelled
+          ? `批次掃描已停止；已處理 ${result.completed || 0} 位客戶`
+          : `批次掃描完成；成功 ${result.saved || 0}、略過 ${result.skipped || 0}、失敗 ${result.failed || 0}`;
+        await load();
+      } catch (error) {
+        state.batch.running = false;
+        state.notice = error.message;
+        state.render();
+      }
+      return true;
+    }
+    if (action === "crm-batch-stop") {
+      state.batchController?.stop?.();
+      state.notice = "正在停止批次掃描，完成目前這一筆後即停止";
+      state.render();
+      return true;
+    }
     if (action === "crm-auto-toggle") {
       state.autoCapture = !state.autoCapture;
       await chrome.storage.local.set({ [AUTO_KEY]: state.autoCapture });
@@ -208,6 +246,24 @@
         <label><span class="lineoa-sr-only">聊天室網址</span><input name="chatUrl" type="url" required autocomplete="off" placeholder="https://chat.line.biz/.../chat/Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"></label>
         <button class="lineoa-primary" type="submit">開啟並自動抓取</button>
       </form>
+      <section class="lineoa-crm-batch ${state.batch.running ? "running" : ""}">
+        <div>
+          <strong>一鍵批次寫入左側聊天室</strong>
+          <span>系統會自動依序切換目前 LINE OA 左側名單，抓取 UID、名稱與頭貼後寫入 CRM；不會傳送訊息。</span>
+        </div>
+        <div class="lineoa-crm-batch-actions">
+          ${state.batch.running
+            ? '<button type="button" data-action="crm-batch-stop">停止／取消</button>'
+            : '<button class="lineoa-primary" type="button" data-action="crm-batch-start">開始批次掃描</button>'}
+        </div>
+        <div class="lineoa-crm-batch-progress">
+          <span>找到 ${state.batch.discovered || 0}</span>
+          <span>已處理 ${state.batch.completed || 0}</span>
+          <span>成功 ${state.batch.saved || 0}</span>
+          <span>略過 ${state.batch.skipped || 0}</span>
+          <span>失敗 ${state.batch.failed || 0}</span>
+        </div>
+      </section>
       <div class="lineoa-crm-rule ${state.autoCapture ? "active" : ""}">
         <strong>${state.autoCapture ? "自動寫入已開啟" : "自動寫入預設關閉"}</strong>
         <span>只有已登入、位於 chat.line.biz 一對一聊天室、取得有效 LINE UID 及名稱或頭貼、且切換穩定 1.2 秒後才會寫入。以「LINEOA 帳戶 + LINE UID」去重；不儲存聊天內容、Cookie 或 LINE Token。</span>
@@ -304,6 +360,7 @@
     setAuthenticated,
     load,
     followConversation,
+    captureBatchContact: (contact) => capture(contact, true, { refresh: false, notice: false }),
     handleClick,
     handleSubmit,
     renderView

@@ -16,7 +16,7 @@ const testing = readFileSync(new URL("../extension/TESTING.md", import.meta.url)
 
 test("extension uses a narrow Manifest V3 boundary", () => {
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.1.13");
+  assert.equal(manifest.version, "0.1.14");
   assert.deepEqual(manifest.permissions, ["storage", "activeTab"]);
   assert.deepEqual(manifest.host_permissions, [
     "https://line-oa.fangwl591021.workers.dev/*",
@@ -110,7 +110,9 @@ test("content workflow follows the active chat and has three display modes", () 
   assert.match(content, /navigator\.clipboard\.writeText/);
   assert.match(content, /\["float", "side", "full"\]/);
   assert.doesNotMatch(content, /\.click\(\)/);
-  assert.doesNotMatch(content, /scrollIntoView|window\.scroll|scrollTo/);
+  assert.doesNotMatch(content, /scrollIntoView|window\.scroll(?:By|To)?/);
+  assert.match(content, /MouseEvent\("click"/);
+  assert.match(content, /scrollContainer\.scrollTop = nextTop/);
   assert.match(styles, /\[data-mode="float"\]/);
   assert.match(styles, /\[data-mode="side"\]/);
   assert.match(styles, /\[data-mode="full"\]/);

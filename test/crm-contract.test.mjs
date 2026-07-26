@@ -59,3 +59,15 @@ test("CRM follows the macro-style list and profile structure", () => {
   assert.match(crm, /返回客戶名單/);
   assert.match(crm, />取消</);
 });
+
+test("CRM batch scanner is explicit, cancellable, and reports progress", () => {
+  assert.match(crm, /crm-batch-start/);
+  assert.match(crm, /crm-batch-stop/);
+  assert.match(crm, /停止／取消/);
+  assert.match(crm, /一鍵批次寫入左側聊天室/);
+  assert.match(content, /findConversationRows/);
+  assert.match(content, /findConversationScrollContainer/);
+  assert.match(content, /waitForConversationContact/);
+  assert.match(content, /progress\.completed < 500/);
+  assert.match(content, /captureBatchContact/);
+});
