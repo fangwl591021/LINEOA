@@ -392,11 +392,13 @@
   }
 
   function findConversationRows() {
-    const viewportRight = Math.min(540, innerWidth * 0.32);
+    const viewportRight = Math.min(640, innerWidth * 0.42);
     const anchors = Array.from(document.querySelectorAll('a[href*="/chat/"]'));
-    const candidates = anchors.length
-      ? anchors
-      : Array.from(document.querySelectorAll('[role="listitem"], [role="link"], [role="button"]'));
+    const candidates = [...new Set([
+      ...anchors,
+      ...Array.from(document.querySelectorAll('[role="listitem"], [role="link"], [role="button"]')),
+      ...Array.from(document.querySelectorAll("img")).map((image) => conversationRowFromAvatar(image, viewportRight)).filter(Boolean)
+    ])];
     const rows = [];
     const seen = new Set();
 
@@ -416,6 +418,21 @@
       rows.push({ element, key, uid: uidMatch?.[1] || "" });
     }
     return rows.sort((left, right) => left.element.getBoundingClientRect().top - right.element.getBoundingClientRect().top);
+  }
+
+  function conversationRowFromAvatar(image, viewportRight) {
+    if (!isVisibleInViewport(image)) return null;
+    const imageRect = image.getBoundingClientRect();
+    if (imageRect.left < 45 || imageRect.right > viewportRight || imageRect.top < 100) return null;
+    if (imageRect.width < 28 || imageRect.width > 96 || imageRect.height < 28 || imageRect.height > 96) return null;
+    let element = image.parentElement;
+    while (element && element !== document.body) {
+      const rect = element.getBoundingClientRect();
+      if (rect.left >= 45 && rect.right <= viewportRight && rect.top >= 100
+        && rect.width >= 180 && rect.height >= 42 && rect.height <= 170) return element;
+      element = element.parentElement;
+    }
+    return null;
   }
 
   function findConversationScrollContainer() {
@@ -635,7 +652,7 @@
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.14</small></div>
+          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.15</small></div>
           <nav aria-label="顯示模式">
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
             <button type="button" data-action="mode" data-mode="full" title="開啟管理全版">□</button>
