@@ -68,8 +68,12 @@ test("CRM batch scanner is explicit, cancellable, and reports progress", () => {
   assert.match(content, /findConversationRows/);
   assert.match(content, /findConversationScrollContainer/);
   assert.match(content, /waitForConversationContact/);
-  assert.match(content, /progress\.completed < 500/);
+  assert.match(content, /progress\.completed < 2000/);
   assert.match(content, /captureBatchContact/);
   assert.match(content, /conversationRowFromAvatar/);
   assert.match(content, /innerWidth \* 0\.42/);
+  assert.match(content, /idleRounds >= 6/);
+  assert.match(content, /await delay\(rows\.length \? 900 : 1500\)/);
+  assert.match(content, /findConversationScrollContainer\(\) \|\| scrollContainer/);
+  assert.match(crm, /等待更多聊天室/);
 });

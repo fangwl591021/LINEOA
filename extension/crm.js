@@ -14,7 +14,7 @@
     notice: "",
     lastSyncKey: "",
     pendingUrlCapture: null,
-    batch: { running: false, discovered: 0, completed: 0, saved: 0, skipped: 0, failed: 0 },
+    batch: { running: false, discovered: 0, completed: 0, saved: 0, skipped: 0, failed: 0, waitingRounds: 0 },
     batchController: null,
     timer: 0,
     render: () => {}
@@ -113,7 +113,7 @@
         state.render();
         return true;
       }
-      state.batch = { running: true, discovered: 0, completed: 0, saved: 0, skipped: 0, failed: 0 };
+      state.batch = { running: true, discovered: 0, completed: 0, saved: 0, skipped: 0, failed: 0, waitingRounds: 0 };
       state.notice = "正在尋找左側聊天室，請保持這個 LINE OA 分頁開啟";
       state.render();
       try {
@@ -262,6 +262,7 @@
           <span>成功 ${state.batch.saved || 0}</span>
           <span>略過 ${state.batch.skipped || 0}</span>
           <span>失敗 ${state.batch.failed || 0}</span>
+          ${state.batch.running && state.batch.waitingRounds ? `<span>等待更多聊天室 ${state.batch.waitingRounds}/6</span>` : ""}
         </div>
       </section>
       <div class="lineoa-crm-rule ${state.autoCapture ? "active" : ""}">

@@ -325,14 +325,13 @@
     if (crmBatch.running) throw new Error("批次掃描已在執行中");
     crmBatch.running = true;
     crmBatch.cancelled = false;
-    const progress = { running: true, discovered: 0, completed: 0, saved: 0, skipped: 0, failed: 0 };
+    const progress = { running: true, discovered: 0, completed: 0, saved: 0, skipped: 0, failed: 0, waitingRounds: 0 };
     const processed = new Set();
     let scrollContainer = null;
-    let stalled = 0;
-    let previousScrollTop = -1;
+    let idleRounds = 0;
 
     try {
-      while (!crmBatch.cancelled && progress.completed < 500) {
+      while (!crmBatch.cancelled && progress.completed < 2000) {
         const rows = findConversationRows().filter((item) => !processed.has(item.key));
         progress.discovered = processed.size + rows.length;
         onProgress?.({ ...progress });
@@ -361,22 +360,36 @@
         }
 
         if (crmBatch.cancelled) break;
-        scrollContainer = scrollContainer || findConversationScrollContainer();
-        if (!scrollContainer || scrollContainer.scrollHeight <= scrollContainer.clientHeight + 4) break;
+        scrollContainer = findConversationScrollContainer() || scrollContainer;
+        if (!scrollContainer) {
+          idleRounds += 1;
+          progress.waitingRounds = idleRounds;
+          onProgress?.({ ...progress });
+          if (idleRounds >= 6) break;
+          await delay(1500);
+          continue;
+        }
+        const beforeHeight = scrollContainer.scrollHeight;
+        const maxTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
         const nextTop = Math.min(
-          scrollContainer.scrollHeight - scrollContainer.clientHeight,
+          maxTop,
           scrollContainer.scrollTop + Math.max(180, Math.floor(scrollContainer.clientHeight * 0.72))
         );
-        if (nextTop <= scrollContainer.scrollTop + 2 || nextTop === previousScrollTop) {
-          stalled += 1;
-        } else {
-          stalled = 0;
-          previousScrollTop = scrollContainer.scrollTop;
+        if (nextTop > scrollContainer.scrollTop + 2) {
           scrollContainer.scrollTop = nextTop;
-          scrollContainer.dispatchEvent(new Event("scroll", { bubbles: true }));
-          await delay(700);
+        } else {
+          scrollContainer.scrollTop = maxTop;
         }
-        if (stalled >= 2) break;
+        scrollContainer.dispatchEvent(new Event("scroll", { bubbles: true }));
+        await delay(rows.length ? 900 : 1500);
+        const refreshedContainer = findConversationScrollContainer() || scrollContainer;
+        const heightGrew = refreshedContainer.scrollHeight > beforeHeight + 4;
+        const hasNewRows = findConversationRows().some((item) => !processed.has(item.key));
+        if (heightGrew || hasNewRows) idleRounds = 0;
+        else idleRounds += 1;
+        progress.waitingRounds = idleRounds;
+        onProgress?.({ ...progress });
+        if (idleRounds >= 6) break;
       }
     } finally {
       crmBatch.running = false;
@@ -652,7 +665,7 @@
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.15</small></div>
+          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.16</small></div>
           <nav aria-label="顯示模式">
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
             <button type="button" data-action="mode" data-mode="full" title="開啟管理全版">□</button>
