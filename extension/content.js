@@ -36,7 +36,10 @@
     document.documentElement.appendChild(root);
     bindRootEvents();
     observeReinsertion();
-    await globalThis.LINEOA_CRM.init(() => render());
+    await globalThis.LINEOA_CRM.init(() => render(), {
+      start: startCrmBatch,
+      stop: stopCrmBatch
+    });
 
     const stored = await chrome.storage.local.get([MODE_KEY, LAYOUT_VERSION_KEY]);
     if (stored[LAYOUT_VERSION_KEY] === LAYOUT_VERSION && ["float", "side", "full"].includes(stored[MODE_KEY])) {
@@ -46,6 +49,7 @@
     }
     await restoreSession();
     startConversationTracking();
+    scheduleCrmAutoBatch();
   }
 
   async function restoreSession() {
@@ -127,7 +131,7 @@
     });
 
     root.addEventListener("submit", async (event) => {
-      if (event.target.id === "lineoa-crm-form") {
+      if (["lineoa-crm-form", "lineoa-crm-url-form"].includes(event.target.id)) {
         event.preventDefault();
         await globalThis.LINEOA_CRM.handleSubmit(event.target);
         return;
@@ -166,6 +170,7 @@
       await loadKnowledge();
       state.notice = "登入成功，知識庫已同步";
       if (state.conversationKey) scanVisibleConversation({ automatic: true });
+      scheduleCrmAutoBatch();
     } catch (error) {
       state.notice = error.message;
     } finally {
@@ -219,6 +224,11 @@
 
   let conversationCheckTimer = 0;
   let lastObservedHref = "";
+  const crmBatch = {
+    running: false,
+    cancelled: false,
+    autoStarted: false
+  };
 
   function startConversationTracking() {
     if (typeof location === "undefined" || location.hostname !== "chat.line.biz") return;
@@ -257,7 +267,10 @@
     const conversationChanged = force || nextKey !== state.conversationKey;
     state.contact = next;
     if (!conversationChanged) {
-      if (profileChanged) render();
+      if (profileChanged) {
+        render();
+        globalThis.LINEOA_CRM.followConversation(next);
+      }
       return;
     }
 
@@ -308,6 +321,198 @@
       .sort((left, right) => left.distance - right.distance || left.rect.left - right.rect.left);
     const name = nameCandidates[0]?.text || "";
     return { uid, name, avatarUrl };
+  }
+
+  async function startCrmBatch(onProgress) {
+    if (location.hostname !== "chat.line.biz") throw new Error("請先進入 LINE OA 聊天室再啟動批次掃描");
+    if (crmBatch.running) throw new Error("批次掃描已在執行中");
+    crmBatch.running = true;
+    crmBatch.cancelled = false;
+    const progress = { running: true, discovered: 0, completed: 0, saved: 0, skipped: 0, failed: 0, waitingRounds: 0 };
+    const processed = new Set();
+    let scrollContainer = null;
+    let idleRounds = 0;
+    await moveConversationListToTop();
+
+    try {
+      while (!crmBatch.cancelled && progress.completed < 2000) {
+        const rows = findConversationRows().filter((item) => !processed.has(item.key));
+        progress.discovered = processed.size + rows.length;
+        onProgress?.({ ...progress });
+
+        for (const item of rows) {
+          if (crmBatch.cancelled) break;
+          processed.add(item.key);
+          if (item.uid && globalThis.LINEOA_CRM.hasContactUid(item.uid)) {
+            progress.skipped += 1;
+            progress.completed += 1;
+            progress.discovered = Math.max(progress.discovered, processed.size);
+            onProgress?.({ ...progress });
+            continue;
+          }
+          const beforeUid = readUidFromLocation();
+          item.element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+          const contact = await waitForConversationContact(beforeUid, item.uid);
+          if (!contact) {
+            progress.skipped += 1;
+          } else {
+            try {
+              const result = await globalThis.LINEOA_CRM.captureBatchContact(contact);
+              if (result) progress.saved += 1;
+              else progress.skipped += 1;
+            } catch {
+              progress.failed += 1;
+            }
+          }
+          progress.completed += 1;
+          progress.discovered = Math.max(progress.discovered, processed.size);
+          onProgress?.({ ...progress });
+          await delay(250);
+        }
+
+        if (crmBatch.cancelled) break;
+        scrollContainer = findConversationScrollContainer() || scrollContainer;
+        if (!scrollContainer) {
+          idleRounds += 1;
+          progress.waitingRounds = idleRounds;
+          onProgress?.({ ...progress });
+          if (idleRounds >= 6) break;
+          await delay(1500);
+          continue;
+        }
+        const beforeHeight = scrollContainer.scrollHeight;
+        const maxTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
+        const nextTop = Math.min(
+          maxTop,
+          scrollContainer.scrollTop + Math.max(180, Math.floor(scrollContainer.clientHeight * 0.72))
+        );
+        if (nextTop > scrollContainer.scrollTop + 2) {
+          scrollContainer.scrollTop = nextTop;
+        } else {
+          scrollContainer.scrollTop = maxTop;
+        }
+        scrollContainer.dispatchEvent(new Event("scroll", { bubbles: true }));
+        await delay(rows.length ? 900 : 1500);
+        const refreshedContainer = findConversationScrollContainer() || scrollContainer;
+        const heightGrew = refreshedContainer.scrollHeight > beforeHeight + 4;
+        const hasNewRows = findConversationRows().some((item) => !processed.has(item.key));
+        if (heightGrew || hasNewRows) idleRounds = 0;
+        else idleRounds += 1;
+        progress.waitingRounds = idleRounds;
+        onProgress?.({ ...progress });
+        if (idleRounds >= 6) break;
+      }
+    } finally {
+      crmBatch.running = false;
+      progress.running = false;
+      progress.cancelled = crmBatch.cancelled;
+      onProgress?.({ ...progress });
+    }
+    return progress;
+  }
+
+  function stopCrmBatch() {
+    crmBatch.cancelled = true;
+  }
+  function scheduleCrmAutoBatch() {
+    if (typeof location === "undefined" || location.hostname !== "chat.line.biz" || !state.user || crmBatch.autoStarted) return;
+    crmBatch.autoStarted = true;
+    setTimeout(() => {
+      if (!state.user || crmBatch.running) return;
+      globalThis.LINEOA_CRM.startAutomaticBatch();
+    }, 2500);
+  }
+
+  async function moveConversationListToTop() {
+    for (let attempt = 0; attempt < 12 && !crmBatch.cancelled; attempt += 1) {
+      const rows = findConversationRows();
+      if (rows.length) {
+        const container = findConversationScrollContainer();
+        if (container) {
+          container.scrollTop = 0;
+          container.dispatchEvent(new Event("scroll", { bubbles: true }));
+          await delay(900);
+        }
+        return;
+      }
+      await delay(500);
+    }
+  }
+
+  function findConversationRows() {
+    const viewportRight = Math.min(640, innerWidth * 0.42);
+    const anchors = Array.from(document.querySelectorAll('a[href*="/chat/"]'));
+    const candidates = [...new Set([
+      ...anchors,
+      ...Array.from(document.querySelectorAll('[role="listitem"], [role="link"], [role="button"]')),
+      ...Array.from(document.querySelectorAll("img")).map((image) => conversationRowFromAvatar(image, viewportRight)).filter(Boolean)
+    ])];
+    const rows = [];
+    const seen = new Set();
+
+    for (const element of candidates) {
+      if (element.closest?.(`#${ROOT_ID}`) || !isVisibleInViewport(element)) continue;
+      const rect = element.getBoundingClientRect();
+      if (rect.left < 45 || rect.right > viewportRight || rect.top < 100 || rect.height < 42 || rect.height > 170 || rect.width < 180) continue;
+      if (!element.querySelector?.("img")) continue;
+      const href = element.href || element.getAttribute?.("href") || "";
+      const uidMatch = String(href).match(/\/chat\/(U[0-9a-f]{32})(?:[/?#]|$)/i);
+      const label = normalizeDisplayText(element.innerText || element.textContent || "");
+      if (!uidMatch && !label) continue;
+      const image = element.querySelector("img");
+      const key = uidMatch?.[1]?.toLowerCase() || `${label}|${safeAvatarUrl(image?.currentSrc || image?.src || "")}`;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ element, key, uid: uidMatch?.[1] || "" });
+    }
+    return rows.sort((left, right) => left.element.getBoundingClientRect().top - right.element.getBoundingClientRect().top);
+  }
+
+  function conversationRowFromAvatar(image, viewportRight) {
+    if (!isVisibleInViewport(image)) return null;
+    const imageRect = image.getBoundingClientRect();
+    if (imageRect.left < 45 || imageRect.right > viewportRight || imageRect.top < 100) return null;
+    if (imageRect.width < 28 || imageRect.width > 96 || imageRect.height < 28 || imageRect.height > 96) return null;
+    let element = image.parentElement;
+    while (element && element !== document.body) {
+      const rect = element.getBoundingClientRect();
+      if (rect.left >= 45 && rect.right <= viewportRight && rect.top >= 100
+        && rect.width >= 180 && rect.height >= 42 && rect.height <= 170) return element;
+      element = element.parentElement;
+    }
+    return null;
+  }
+
+  function findConversationScrollContainer() {
+    const rows = findConversationRows();
+    if (!rows.length) return null;
+    let element = rows[0].element.parentElement;
+    while (element && element !== document.body) {
+      const rect = element.getBoundingClientRect();
+      if (rect.left < 540 && element.scrollHeight > element.clientHeight + 40 && element.clientHeight > 200) return element;
+      element = element.parentElement;
+    }
+    return null;
+  }
+
+  async function waitForConversationContact(beforeUid, expectedUid) {
+    const startedAt = Date.now();
+    while (!crmBatch.cancelled && Date.now() - startedAt < 8000) {
+      const contact = readActiveContact();
+      const uidMatches = expectedUid
+        ? contact.uid.toLowerCase() === expectedUid.toLowerCase()
+        : contact.uid && contact.uid !== beforeUid;
+      if (uidMatches && (contact.name || contact.avatarUrl)) {
+        await delay(650);
+        return readActiveContact();
+      }
+      await delay(200);
+    }
+    return null;
+  }
+
+  function delay(milliseconds) {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
   }
 
   function readUidFromLocation() {
@@ -495,7 +700,7 @@
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.12</small></div>
+          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.18</small></div>
           <nav aria-label="顯示模式">
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
             <button type="button" data-action="mode" data-mode="full" title="開啟管理全版">□</button>
@@ -531,7 +736,7 @@
     return `
       <section class="lineoa-admin-shell" aria-live="polite">
         <aside class="lineoa-admin-sidebar">
-          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.12</small></div></div>
+          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.18</small></div></div>
           <nav>
             ${groupHeader("service", "📦", "服務中心")}
             ${state.adminGroups.service ? `
