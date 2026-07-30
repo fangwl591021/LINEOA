@@ -328,32 +328,28 @@
     if (crmBatch.running) throw new Error("批次掃描已在執行中");
     crmBatch.running = true;
     crmBatch.cancelled = false;
-    const progress = { running: true, discovered: 0, completed: 0, saved: 0, skipped: 0, failed: 0, waitingRounds: 0, checkpointReached: false };
+    const progress = { running: true, discovered: 0, completed: 0, saved: 0, skipped: 0, failed: 0, waitingRounds: 0 };
     const processed = new Set();
     let scrollContainer = null;
     let idleRounds = 0;
-    const checkpointKey = crmCheckpointStorageKey();
-    const stored = await chrome.storage.local.get(checkpointKey);
-    const previousCheckpoint = String(stored[checkpointKey]?.token || "");
-    let nextCheckpoint = "";
-    let checkpointReached = false;
     await moveConversationListToTop();
 
     try {
       while (!crmBatch.cancelled && progress.completed < 2000) {
         const rows = findConversationRows().filter((item) => !processed.has(item.key));
-        if (!nextCheckpoint && rows.length) nextCheckpoint = checkpointToken(rows[0].key);
         progress.discovered = processed.size + rows.length;
         onProgress?.({ ...progress });
 
         for (const item of rows) {
           if (crmBatch.cancelled) break;
-          if (previousCheckpoint && checkpointToken(item.key) === previousCheckpoint) {
-            checkpointReached = true;
-            progress.checkpointReached = true;
-            break;
-          }
           processed.add(item.key);
+          if (item.uid && globalThis.LINEOA_CRM.hasContactUid(item.uid)) {
+            progress.skipped += 1;
+            progress.completed += 1;
+            progress.discovered = Math.max(progress.discovered, processed.size);
+            onProgress?.({ ...progress });
+            continue;
+          }
           const beforeUid = readUidFromLocation();
           item.element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
           const contact = await waitForConversationContact(beforeUid, item.uid);
@@ -374,7 +370,6 @@
           await delay(250);
         }
 
-        if (checkpointReached) break;
         if (crmBatch.cancelled) break;
         scrollContainer = findConversationScrollContainer() || scrollContainer;
         if (!scrollContainer) {
@@ -407,16 +402,10 @@
         onProgress?.({ ...progress });
         if (idleRounds >= 6) break;
       }
-      if (!crmBatch.cancelled && nextCheckpoint && (checkpointReached || idleRounds >= 6)) {
-        await chrome.storage.local.set({
-          [checkpointKey]: { token: nextCheckpoint, updatedAt: Date.now() }
-        });
-      }
     } finally {
       crmBatch.running = false;
       progress.running = false;
       progress.cancelled = crmBatch.cancelled;
-      progress.checkpointReached = checkpointReached;
       onProgress?.({ ...progress });
     }
     return progress;
@@ -448,22 +437,6 @@
       }
       await delay(500);
     }
-  }
-
-  function crmCheckpointStorageKey() {
-    const accountId = String(location.pathname || "").split("/").filter(Boolean)[0] || "default";
-    const safeAccountId = /^[A-Za-z0-9_-]{8,128}$/.test(accountId) ? accountId : "default";
-    return `lineoa_crm_scan_checkpoint_${safeAccountId}`;
-  }
-
-  function checkpointToken(value) {
-    const text = String(value || "");
-    let hash = 2166136261;
-    for (let index = 0; index < text.length; index += 1) {
-      hash ^= text.charCodeAt(index);
-      hash = Math.imul(hash, 16777619);
-    }
-    return `v1-${(hash >>> 0).toString(16).padStart(8, "0")}`;
   }
 
   function findConversationRows() {
@@ -727,7 +700,7 @@
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.17</small></div>
+          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.18</small></div>
           <nav aria-label="顯示模式">
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
             <button type="button" data-action="mode" data-mode="full" title="開啟管理全版">□</button>
@@ -763,7 +736,7 @@
     return `
       <section class="lineoa-admin-shell" aria-live="polite">
         <aside class="lineoa-admin-sidebar">
-          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.17</small></div></div>
+          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.18</small></div></div>
           <nav>
             ${groupHeader("service", "📦", "服務中心")}
             ${state.adminGroups.service ? `

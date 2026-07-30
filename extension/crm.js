@@ -50,19 +50,22 @@
   }
 
   async function load() {
-    if (!state.authenticated) return;
+    if (!state.authenticated) return false;
     state.loading = true;
     state.render();
+    let succeeded = false;
     try {
       const data = await send({ type: "lineoa:crm:list" });
       state.contacts = Array.isArray(data.contacts) ? data.contacts : [];
       state.summary = data.summary || { total: 0, newThisMonth: 0, active: 0, tagged: 0 };
+      succeeded = true;
     } catch (error) {
       state.notice = error.message;
     } finally {
       state.loading = false;
       state.render();
     }
+    return succeeded;
   }
 
   function followConversation(contact) {
@@ -106,11 +109,26 @@
     return result;
   }
 
+  function hasContactUid(value) {
+    const uid = String(value || "").toLowerCase();
+    return Boolean(uid) && state.contacts.some((item) => String(item.lineUid || "").toLowerCase() === uid);
+  }
+
+  async function captureBatchContact(contact) {
+    if (hasContactUid(contact?.uid)) return null;
+    return capture(contact, true, { refresh: false, notice: false });
+  }
+
   async function handleClick(action, button, contact) {
     if (action === "crm-batch-start") {
       if (state.batch.running) return true;
       if (!state.batchController?.start) {
         state.notice = "目前頁面無法啟動批次掃描，請在 chat.line.biz 聊天室使用";
+        state.render();
+        return true;
+      }
+      if (!await load()) {
+        state.notice = "無法取得 CRM 現有名單，已停止掃描以避免重複處理";
         state.render();
         return true;
       }
@@ -125,9 +143,7 @@
         state.batch = { ...state.batch, ...result, running: false };
         state.notice = result.cancelled
           ? `批次掃描已停止；已處理 ${result.completed || 0} 位客戶`
-          : result.checkpointReached
-            ? `已掃描到上次名單；新增或更新 ${result.saved || 0} 位客戶`
-            : `首次批次掃描完成；成功 ${result.saved || 0}、略過 ${result.skipped || 0}、失敗 ${result.failed || 0}`;
+          : `抓漏掃描完成；新增 ${result.saved || 0}、已建檔略過 ${result.skipped || 0}、失敗 ${result.failed || 0}`;
         await load();
       } catch (error) {
         state.batch.running = false;
@@ -252,7 +268,7 @@
       <section class="lineoa-crm-batch ${state.batch.running ? "running" : ""}">
         <div>
           <strong>一鍵批次寫入左側聊天室</strong>
-          <span>開啟聊天室後會自動從最上方往下掃描；遇到上次名單即停止。第一次才會完整掃到底，不會傳送訊息。</span>
+          <span>開啟聊天室後會自動從最上方掃到底；已存在 CRM 的 UID 直接略過，只補建缺少的客戶，不會傳送訊息。</span>
         </div>
         <div class="lineoa-crm-batch-actions">
           ${state.batch.running
@@ -364,7 +380,8 @@
     setAuthenticated,
     load,
     followConversation,
-    captureBatchContact: (contact) => capture(contact, true, { refresh: false, notice: false }),
+    hasContactUid,
+    captureBatchContact,
     startAutomaticBatch: () => handleClick("crm-batch-start", null, null),
     handleClick,
     handleSubmit,
