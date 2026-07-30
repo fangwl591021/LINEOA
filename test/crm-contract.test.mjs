@@ -76,4 +76,12 @@ test("CRM batch scanner is explicit, cancellable, and reports progress", () => {
   assert.match(content, /await delay\(rows\.length \? 900 : 1500\)/);
   assert.match(content, /findConversationScrollContainer\(\) \|\| scrollContainer/);
   assert.match(crm, /等待更多聊天室/);
+  assert.match(content, /scheduleCrmAutoBatch\(\)/);
+  assert.match(content, /startAutomaticBatch/);
+  assert.match(content, /moveConversationListToTop/);
+  assert.match(content, /lineoa_crm_scan_checkpoint_/);
+  assert.match(content, /checkpointToken/);
+  assert.match(content, /checkpointReached/);
+  assert.match(crm, /已掃描到上次名單/);
+  assert.match(crm, /立即重新掃描/);
 });

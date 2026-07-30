@@ -108,6 +108,7 @@
 
   async function handleClick(action, button, contact) {
     if (action === "crm-batch-start") {
+      if (state.batch.running) return true;
       if (!state.batchController?.start) {
         state.notice = "目前頁面無法啟動批次掃描，請在 chat.line.biz 聊天室使用";
         state.render();
@@ -124,7 +125,9 @@
         state.batch = { ...state.batch, ...result, running: false };
         state.notice = result.cancelled
           ? `批次掃描已停止；已處理 ${result.completed || 0} 位客戶`
-          : `批次掃描完成；成功 ${result.saved || 0}、略過 ${result.skipped || 0}、失敗 ${result.failed || 0}`;
+          : result.checkpointReached
+            ? `已掃描到上次名單；新增或更新 ${result.saved || 0} 位客戶`
+            : `首次批次掃描完成；成功 ${result.saved || 0}、略過 ${result.skipped || 0}、失敗 ${result.failed || 0}`;
         await load();
       } catch (error) {
         state.batch.running = false;
@@ -249,12 +252,12 @@
       <section class="lineoa-crm-batch ${state.batch.running ? "running" : ""}">
         <div>
           <strong>一鍵批次寫入左側聊天室</strong>
-          <span>系統會自動依序切換目前 LINE OA 左側名單，抓取 UID、名稱與頭貼後寫入 CRM；不會傳送訊息。</span>
+          <span>開啟聊天室後會自動從最上方往下掃描；遇到上次名單即停止。第一次才會完整掃到底，不會傳送訊息。</span>
         </div>
         <div class="lineoa-crm-batch-actions">
           ${state.batch.running
             ? '<button type="button" data-action="crm-batch-stop">停止／取消</button>'
-            : '<button class="lineoa-primary" type="button" data-action="crm-batch-start">開始批次掃描</button>'}
+            : '<button class="lineoa-primary" type="button" data-action="crm-batch-start">立即重新掃描</button>'}
         </div>
         <div class="lineoa-crm-batch-progress">
           <span>找到 ${state.batch.discovered || 0}</span>
@@ -362,6 +365,7 @@
     load,
     followConversation,
     captureBatchContact: (contact) => capture(contact, true, { refresh: false, notice: false }),
+    startAutomaticBatch: () => handleClick("crm-batch-start", null, null),
     handleClick,
     handleSubmit,
     renderView
