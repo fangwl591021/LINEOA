@@ -14,13 +14,50 @@ const formHtml = `<section class="panel" style="margin:0 0 22px">
   </form><p id="admin-create-status" class="panel-body" role="status" aria-live="polite"></p>
 </section>`;
 
-export const adminAccountClientScript = `const ADMIN_ACCOUNT_FORM = ${JSON.stringify(formHtml)};` + String.raw`
+const editHtml = `<section id="admin-edit-panel" class="panel hidden" style="margin:0 0 22px">
+  <div class="panel-head"><h2>編輯帳戶</h2></div>
+  <form id="admin-edit-form" class="panel-body" autocomplete="off">
+    <div style="position:sticky;top:74px;background:white;padding:8px 0;z-index:4"><button id="admin-edit-cancel" class="btn" type="button">取消編輯／返回用戶名單</button></div>
+    <div class="field"><label>Email（不可於此修改）</label><input name="email" readonly></div>
+    <div class="field"><label>姓名（必填）</label><input name="displayName" required minlength="2" maxlength="80"></div>
+    <div class="field"><label>公司／品牌</label><input name="companyName" maxlength="120"></div>
+    <div class="field"><label>監控 LINE@（必填）</label><input name="monitoredLineOa" required maxlength="101" pattern="@[a-zA-Z0-9._\\-]{1,100}" placeholder="@abc1234"></div>
+    <p class="muted">只修改帳戶資料，不改 Email、密碼、角色、狀態或方案。LINE@ 不是 LINE 官方帳號授權。</p>
+    <button class="btn btn-primary" type="submit">儲存修改</button>
+  </form>
+</section>`;
+
+export const adminAccountClientScript = `const ADMIN_ACCOUNT_FORM = ${JSON.stringify(formHtml + editHtml)};` + String.raw`
 function bindAdminAccountForm() {
   if (state.user?.role !== "admin") return;
   $("content").insertAdjacentHTML("afterbegin", ADMIN_ACCOUNT_FORM);
   const form = $("admin-create-form"), feedback = $("admin-create-status");
   let creating = false;
-  $("admin-create-open").onclick = () => { form.classList.remove("hidden"); form.elements.displayName.focus(); };
+  let editing = null;
+  const editForm = $("admin-edit-form"), editPanel = $("admin-edit-panel");
+  function closeEdit() {
+    if (creating || (editing && !confirm("取消編輯並清除未儲存資料？"))) return false;
+    editing = null; editForm.reset(); editPanel.classList.add("hidden"); return true;
+  }
+  $("admin-edit-cancel").onclick = closeEdit;
+  $("admin-create-open").onclick = () => { if (!closeEdit()) return; form.classList.remove("hidden"); form.elements.displayName.focus(); };
+  editForm.onsubmit = async event => {
+    event.preventDefault();
+    if (creating || !editing || !editForm.reportValidity()) return;
+    const body = { displayName: editForm.elements.displayName.value, companyName: editForm.elements.companyName.value,
+      monitoredLineOa: editForm.elements.monitoredLineOa.value, expectedUpdatedAt: editing.updated_at };
+    creating = true; editForm.querySelectorAll("button").forEach(button => button.disabled = true);
+    let saved = false;
+    try {
+      const result = await request("/api/admin/users/" + encodeURIComponent(editing.id), { method: "PATCH", body: JSON.stringify(body) });
+      saved = true;
+      if (state.user.id === result.user.id) state.user = result.user;
+      editing = null; editForm.reset(); editPanel.classList.add("hidden");
+      await render(); $("admin-create-status").textContent = "帳戶資料已更新，密碼、權限與方案保持不變。";
+    } catch (error) {
+      feedback.textContent = saved ? "修改已儲存，但名單更新失敗，請重新整理。" : error.message + "。資料衝突時請取消、重新整理後再編輯。";
+    } finally { creating = false; editForm.querySelectorAll("button").forEach(button => button.disabled = false); }
+  };
   $("admin-create-cancel").onclick = () => {
     if (creating || !confirm("取消新增並清除表單資料？")) return;
     form.reset(); form.classList.add("hidden"); feedback.textContent = "已取消，未建立帳戶";
@@ -49,8 +86,24 @@ function bindAdminAccountForm() {
   if (table) {
     const heading = document.createElement("th"); heading.textContent = "監控 LINE@";
     table.querySelector("thead tr").appendChild(heading);
+    const actionHeading = document.createElement("th"); actionHeading.textContent = "操作";
+    table.querySelector("thead tr").appendChild(actionHeading);
     table.querySelectorAll("tbody tr").forEach((row, index) => {
       const cell = document.createElement("td"); cell.textContent = state.adminUsers[index]?.monitored_line_oa || "尚未指定"; row.appendChild(cell);
+      const action = document.createElement("td"), button = document.createElement("button");
+      button.type = "button"; button.className = "btn"; button.textContent = "編輯";
+      button.onclick = () => {
+        if (creating || !closeEdit()) return;
+        if (!form.classList.contains("hidden") && !confirm("取消新增並改為編輯此帳戶？")) return;
+        form.reset(); form.classList.add("hidden");
+        editing = state.adminUsers[index];
+        editForm.elements.email.value = editing.email;
+        editForm.elements.displayName.value = editing.display_name;
+        editForm.elements.companyName.value = editing.company_name || "";
+        editForm.elements.monitoredLineOa.value = editing.monitored_line_oa || "";
+        editPanel.classList.remove("hidden"); editForm.elements.displayName.focus(); feedback.textContent = "";
+      };
+      action.appendChild(button); row.appendChild(action);
     });
   }
 }

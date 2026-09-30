@@ -36,10 +36,10 @@ test("admin creation uses real local D1: authorization, required LINE@, audit, l
 
     const password = randomBytes(20).toString("base64url");
     const input = { displayName: "測試用戶", email: "New-Account@example.invalid", password, companyName: "測試品牌", monitoredLineOa: " @Demo.123 " };
-    async function call(path, token, body, raw = false) {
+    async function call(path, token, body, raw = false, method) {
       const headers = { "content-type": "application/json" };
       if (token) headers.authorization = `Bearer ${token}`;
-      const response = await mf.dispatchFetch(`http://localhost${path}`, { method: body === undefined ? "GET" : "POST", headers, body: body === undefined ? undefined : raw ? body : JSON.stringify(body) });
+      const response = await mf.dispatchFetch(`http://localhost${path}`, { method: method || (body === undefined ? "GET" : "POST"), headers, body: body === undefined ? undefined : raw ? body : JSON.stringify(body) });
       const text = await response.text();
       return { status: response.status, body: JSON.parse(text), text };
     }
@@ -85,6 +85,40 @@ test("admin creation uses real local D1: authorization, required LINE@, audit, l
     assert.equal((await call("/api/admin/users", login.body.token, input)).status, 403);
     assert.equal((await call("/api/auth/login", null, { email: input.email, password: "incorrect-password" })).status, 401);
 
+    const editPath = `/api/admin/users/${account.id}`;
+    const editBody = { displayName: "修正姓名", companyName: "修正公司", monitoredLineOa: "@NEW.123", expectedUpdatedAt: account.updated_at };
+    const edit = (token, body, path = editPath) => call(path, token, body, false, "PATCH");
+    assert.equal((await edit(null, editBody)).status, 401);
+    assert.equal((await edit(userToken, editBody)).status, 403);
+    assert.equal((await edit(adminToken, editBody, "/api/admin/users/missing")).status, 404);
+    for (const patch of [{ email: "changed@example.invalid" }, { role: "admin" }, { plan: "paid" }, { status: "disabled" }, { password: "new-password" }, { displayName: "a" }, { displayName: {} }, { companyName: "x".repeat(121) }, { monitoredLineOa: "" }, { monitoredLineOa: "bad" }]) {
+      assert.equal((await edit(adminToken, { ...editBody, ...patch })).status, 400);
+    }
+    const updated = await edit(adminToken, editBody);
+    assert.equal(updated.status, 200);
+    assert.equal(updated.body.user.monitoredLineOa, "@new.123");
+    assert.equal(updated.body.user.displayName, "修正姓名");
+    const edited = await db.prepare("SELECT * FROM users WHERE id = ?").bind(account.id).first();
+    for (const field of ["email", "password_hash", "password_salt", "role", "plan", "status", "created_at"]) assert.equal(edited[field], account[field]);
+    assert.equal(edited.updated_at, updated.body.updatedAt);
+    assert.equal((await edit(adminToken, editBody)).status, 409);
+    const editAudit = await db.prepare("SELECT * FROM audit_logs WHERE action = 'admin.user.update'").all();
+    assert.equal(editAudit.results.length, 1);
+    assert.equal(editAudit.results[0].user_id, "operator");
+    assert.equal(editAudit.results[0].detail, account.id);
+    const editRace = await Promise.all([edit(adminToken, { ...editBody, expectedUpdatedAt: edited.updated_at, displayName: "競爭一" }), edit(adminToken, { ...editBody, expectedUpdatedAt: edited.updated_at, displayName: "競爭二" })]);
+    assert.deepEqual(editRace.map(row => row.status).sort(), [200, 409]);
+    assert.equal((await db.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action = 'admin.user.update'").first()).n, 2);
+    const preFailure = await db.prepare("SELECT * FROM users WHERE id = ?").bind(account.id).first();
+    await db.prepare("CREATE TRIGGER reject_edit_audit BEFORE INSERT ON audit_logs WHEN NEW.action = 'admin.user.update' BEGIN SELECT RAISE(ABORT, 'test audit failure'); END").run();
+    assert.equal((await edit(adminToken, { ...editBody, expectedUpdatedAt: preFailure.updated_at })).status, 500);
+    assert.deepEqual(await db.prepare("SELECT * FROM users WHERE id = ?").bind(account.id).first(), preFailure);
+    await db.prepare("DROP TRIGGER reject_edit_audit").run();
+    assert.equal((await call("/api/auth/me", adminToken)).body.user.id, "operator");
+    assert.equal((await call("/api/auth/me", login.body.token)).body.user.monitoredLineOa, "@new.123");
+    const options = await mf.dispatchFetch(`http://localhost${editPath}`, { method: "OPTIONS", headers: { origin: "chrome-extension://test" } });
+    assert.match(options.headers.get("access-control-allow-methods"), /PATCH/);
+
     // Two simultaneous submissions must never create two users for one email.
     const raceInput = { ...input, email: "race@example.invalid" };
     const concurrent = await Promise.all([call("/api/admin/users", adminToken, raceInput), call("/api/admin/users", adminToken, raceInput)]);
@@ -95,6 +129,7 @@ test("admin creation uses real local D1: authorization, required LINE@, audit, l
     assert.doesNotThrow(() => new vm.Script(script));
     assert.match(html, /監控 LINE@/);
     assert.match(html, /取消／返回用戶名單/);
+    assert.match(html, /取消編輯／返回用戶名單/);
   } finally { await mf.dispose(); }
 });
 
@@ -109,4 +144,8 @@ test("extension create-account form stays private and never replaces the operato
   assert.match(content, /state.user.role === "admin"/);
   assert.doesNotMatch(js, /storage\.local|localStorage|console\./);
   assert.doesNotMatch(js, /lineoa:auth/);
+  assert.match(page, /id="edit-form"/);
+  assert.match(page, /取消編輯/);
+  assert.match(js, /send\("update", body\)/);
+  assert.match(background, /lineoa:accounts:update/);
 });

@@ -44,11 +44,18 @@ async function handleMessage(message, sender) {
     await chrome.tabs.create({ url: chrome.runtime.getURL("accounts.html") });
     return { ok: true };
   }
-  if (["lineoa:accounts:list", "lineoa:accounts:create"].includes(type)) {
+  if (["lineoa:accounts:list", "lineoa:accounts:create", "lineoa:accounts:update"].includes(type)) {
     if (sender.url?.split(/[?#]/)[0] !== chrome.runtime.getURL("accounts.html")) throw new Error("帳戶操作只能在私有管理頁執行");
     const token = await requireToken();
     if (type === "lineoa:accounts:list") return apiRequest("/api/admin/users", { token });
     const body = message.body || {};
+    if (type === "lineoa:accounts:update") {
+      if (typeof body.id !== "string" || !/^[a-zA-Z0-9-]{1,80}$/.test(body.id)) throw new Error("帳戶識別碼無效");
+      return apiRequest(`/api/admin/users/${encodeURIComponent(body.id)}`, { token, method: "PATCH", body: {
+        displayName: body.displayName, companyName: body.companyName,
+        monitoredLineOa: body.monitoredLineOa, expectedUpdatedAt: body.expectedUpdatedAt
+      } });
+    }
     return apiRequest("/api/admin/users", { token, method: "POST", body: {
       displayName: body.displayName, email: body.email, companyName: body.companyName,
       password: body.password, monitoredLineOa: body.monitoredLineOa

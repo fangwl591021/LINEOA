@@ -2,7 +2,7 @@
 
 (() => {
   const ROOT_ID = "lineoa-extension-root";
-  const PANEL_VERSION = chrome.runtime.getManifest?.().version || "0.1.22";
+  const PANEL_VERSION = chrome.runtime.getManifest?.().version || "0.1.23";
   const MODE_KEY = "lineoa_panel_mode";
   const LAYOUT_VERSION_KEY = "lineoa_layout_version";
   const LAYOUT_VERSION = 2;

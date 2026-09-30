@@ -15,7 +15,7 @@ export default {
       const richMenuResponse = await handleRichMenuFeature(request, env, url, cors);
       if (richMenuResponse) return richMenuResponse;
       if (url.pathname === "/health") {
-        return json({ ok: true, service: "lineoa-saas", version: "0.1.3" }, 200, cors);
+        return json({ ok: true, service: "lineoa-saas", version: "0.1.4" }, 200, cors);
       }
       if (url.pathname === "/api/auth/register" && request.method === "POST") {
         return await register(request, env, cors);
@@ -92,10 +92,15 @@ export default {
         const auth = await requireAdmin(request, env);
         return await createAdminUser(request, env, cors, auth.user);
       }
+      const adminUserMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)$/);
+      if (adminUserMatch && request.method === "PATCH") {
+        const auth = await requireAdmin(request, env);
+        return await updateAdminUser(request, env, cors, auth.user, adminUserMatch[1]);
+      }
       if (url.pathname === "/api/admin/users" && request.method === "GET") {
         await requireAdmin(request, env);
         const rows = await env.DB.prepare(`
-          SELECT u.id, u.email, u.display_name, u.company_name, u.monitored_line_oa, u.role, u.plan, u.status, u.created_at,
+          SELECT u.id, u.email, u.display_name, u.company_name, u.monitored_line_oa, u.role, u.plan, u.status, u.created_at, u.updated_at,
                  COUNT(k.id) knowledge_count,
                  f.trial_ends_at rich_menu_trial_ends_at,
                  f.subscription_ends_at rich_menu_subscription_ends_at
@@ -201,6 +206,32 @@ async function createAdminUser(request, env, cors, operator) {
   const user = { id, email, display_name: displayName, company_name: companyName, monitored_line_oa: monitoredLineOa,
     role: "user", plan: "free", status: "active", created_at: now };
   return json({ ok: true, user: publicUser(user), limits: planLimits(env, user) }, 201, { ...cors, "cache-control": "no-store" });
+}
+
+async function updateAdminUser(request, env, cors, operator, id) {
+  const body = await accountJson(request);
+  const allowed = ["displayName", "companyName", "monitoredLineOa", "expectedUpdatedAt"];
+  if (Object.keys(body).some(key => !allowed.includes(key)) || allowed.some(key => typeof body[key] !== "string")) {
+    throw httpError(400, "編輯僅接受姓名、公司／品牌、監控 LINE@ 與資料版本；不可修改 Email、密碼、權限或方案");
+  }
+  const displayName = body.displayName.trim(), companyName = body.companyName.trim();
+  const monitoredLineOa = body.monitoredLineOa.trim().toLowerCase();
+  if (displayName.length < 2 || displayName.length > 80 || displayName.includes("\u0000")) throw httpError(400, "姓名需要 2–80 個字");
+  if (companyName.length > 120 || companyName.includes("\u0000")) throw httpError(400, "公司／品牌最多 120 個字");
+  if (!/^@[a-z0-9._-]{1,100}$/.test(monitoredLineOa)) throw httpError(400, "請輸入監控 LINE@，例如 @abc1234；不可填入聊天室網址");
+  const existing = await env.DB.prepare("SELECT id, email, display_name, company_name, monitored_line_oa, role, plan, status, created_at, updated_at FROM users WHERE id = ?").bind(id).first();
+  if (!existing) throw httpError(404, "找不到帳戶");
+  if (body.expectedUpdatedAt !== existing.updated_at) throw httpError(409, "資料已更新，請重新整理名單後再編輯");
+  const now = new Date(Math.max(Date.now(), (Date.parse(existing.updated_at) || 0) + 1)).toISOString();
+  const results = await env.DB.batch([
+    env.DB.prepare("UPDATE users SET display_name = ?, company_name = ?, monitored_line_oa = ?, updated_at = ? WHERE id = ? AND updated_at = ?")
+      .bind(displayName, companyName, monitoredLineOa, now, id, body.expectedUpdatedAt),
+    // D1 batch is transactional. Only record an edit if its guarded update succeeded.
+    env.DB.prepare("INSERT INTO audit_logs (id, user_id, action, detail, created_at) SELECT ?, ?, 'admin.user.update', ?, ? WHERE changes() = 1")
+      .bind(crypto.randomUUID(), operator.id, id, now)
+  ]);
+  if (results[0].meta.changes !== 1) throw httpError(409, "資料已更新，請重新整理名單後再編輯");
+  return json({ ok: true, user: publicUser({ ...existing, display_name: displayName, company_name: companyName, monitored_line_oa: monitoredLineOa }), updatedAt: now }, 200, { ...cors, "cache-control": "no-store" });
 }
 
 async function accountJson(request) {
@@ -621,7 +652,7 @@ function corsHeaders(request) {
   return {
     "access-control-allow-origin": allowed,
     "access-control-allow-headers": "authorization, content-type",
-    "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+    "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
     "access-control-max-age": "86400",
     "vary": "Origin"
   };
