@@ -1,4 +1,5 @@
 import { handleRichMenuFeature } from "./rich-menu-feature.js";
+import { adminAccountClientScript } from "./admin-account-ui.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
@@ -14,7 +15,7 @@ export default {
       const richMenuResponse = await handleRichMenuFeature(request, env, url, cors);
       if (richMenuResponse) return richMenuResponse;
       if (url.pathname === "/health") {
-        return json({ ok: true, service: "lineoa-saas", version: "0.1.2" }, 200, cors);
+        return json({ ok: true, service: "lineoa-saas", version: "0.1.3" }, 200, cors);
       }
       if (url.pathname === "/api/auth/register" && request.method === "POST") {
         return await register(request, env, cors);
@@ -87,10 +88,14 @@ export default {
           operator: publicUser(auth.user)
         }, 200, cors);
       }
+      if (url.pathname === "/api/admin/users" && request.method === "POST") {
+        const auth = await requireAdmin(request, env);
+        return await createAdminUser(request, env, cors, auth.user);
+      }
       if (url.pathname === "/api/admin/users" && request.method === "GET") {
         await requireAdmin(request, env);
         const rows = await env.DB.prepare(`
-          SELECT u.id, u.email, u.display_name, u.company_name, u.role, u.plan, u.status, u.created_at,
+          SELECT u.id, u.email, u.display_name, u.company_name, u.monitored_line_oa, u.role, u.plan, u.status, u.created_at,
                  COUNT(k.id) knowledge_count,
                  f.trial_ends_at rich_menu_trial_ends_at,
                  f.subscription_ends_at rich_menu_subscription_ends_at
@@ -154,6 +159,72 @@ async function register(request, env, cors) {
   const user = { id, email, display_name: displayName, company_name: companyName, role, plan: "free", status: "active", created_at: now };
   await audit(env, id, "register", "free");
   return json({ ok: true, token: session.token, expiresAt: session.expiresAt, user: publicUser(user), limits: planLimits(env, user) }, 201, cors);
+}
+
+async function createAdminUser(request, env, cors, operator) {
+  const body = await accountJson(request);
+  const email = normalizeEmail(body.email);
+  const displayName = String(body.displayName || "").trim();
+  const companyName = String(body.companyName || "").trim();
+  const password = String(body.password || "");
+  const monitoredLineOa = String(body.monitoredLineOa || "").trim().toLowerCase();
+  if (!email || email.length > 254) throw httpError(400, "請輸入有效的 Email（最多 254 字元）");
+  if (displayName.length < 2 || displayName.length > 80 || displayName.includes("\u0000")) throw httpError(400, "姓名需要 2–80 個字");
+  if (companyName.length > 120 || companyName.includes("\u0000")) throw httpError(400, "公司／品牌最多 120 個字");
+  if (password.length < 8 || password.length > 200) throw httpError(400, "密碼需要 8–200 個字元");
+  if (!/^@[a-z0-9._-]{1,100}$/.test(monitoredLineOa)) throw httpError(400, "請輸入監控 LINE@，例如 @abc1234；不可填入聊天室網址");
+  if ((body.role !== undefined && body.role !== "user") || (body.plan !== undefined && body.plan !== "free")) {
+    throw httpError(400, "此功能僅建立一般免費帳戶，不授予管理員權限");
+  }
+  const exists = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
+  if (exists) throw httpError(409, "此 Email 已有帳戶，未新增或覆寫任何資料");
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const salt = randomToken(18);
+  const passwordHash = await derivePassword(password, salt);
+  try {
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO users
+        (id, email, display_name, company_name, password_salt, password_hash, role, plan, status, created_at, updated_at, monitored_line_oa)
+        VALUES (?, ?, ?, ?, ?, ?, 'user', 'free', 'active', ?, ?, ?)`)
+        .bind(id, email, displayName, companyName, salt, passwordHash, now, now, monitoredLineOa),
+      env.DB.prepare("INSERT INTO audit_logs (id, user_id, action, detail, created_at) VALUES (?, ?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), operator.id, "admin.user.create", id, now)
+    ]);
+  } catch (error) {
+    if (/UNIQUE constraint failed: users.email/i.test(String(error?.message) + String(error?.cause?.message))) {
+      throw httpError(409, "此 Email 已有帳戶，未新增或覆寫任何資料");
+    }
+    throw error;
+  }
+  // No session is created: the operator stays signed in, and no password is returned.
+  const user = { id, email, display_name: displayName, company_name: companyName, monitored_line_oa: monitoredLineOa,
+    role: "user", plan: "free", status: "active", created_at: now };
+  return json({ ok: true, user: publicUser(user), limits: planLimits(env, user) }, 201, { ...cors, "cache-control": "no-store" });
+}
+
+async function accountJson(request) {
+  if (!request.headers.get("content-type")?.toLowerCase().includes("application/json")) throw httpError(415, "請使用 JSON 格式");
+  const reader = request.body?.getReader();
+  if (!reader) throw httpError(400, "請填寫帳戶資料");
+  let length = 0;
+  const chunks = [];
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > 8192) { await reader.cancel(); throw httpError(413, "帳戶資料過大"); }
+      chunks.push(value);
+    }
+  } finally { reader.releaseLock(); }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+  let body;
+  try { body = JSON.parse(new TextDecoder().decode(bytes)); } catch { throw httpError(400, "JSON 格式錯誤"); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw httpError(400, "帳戶資料格式錯誤");
+  return body;
 }
 
 async function login(request, env, cors) {
@@ -378,6 +449,7 @@ function publicUser(user) {
     email: user.email,
     displayName: user.display_name,
     companyName: user.company_name || "",
+    monitoredLineOa: user.monitored_line_oa || "",
     role: user.role,
     plan: user.plan,
     status: user.status,
@@ -434,6 +506,7 @@ function appPage(env, mode) {
     <main class="main"><header class="header"><h1 id="page-title">營運總覽</h1><div class="status"><span class="dot"></span><span>免費方案正常</span></div></header><div id="content" class="content"></div></main>
   </section>
 <script>
+${adminAccountClientScript}
 const TOKEN_KEY="lineoa_token",LEGACY_TOKEN_KEY="linepilot_token";
 const API="", state={token:localStorage.getItem(TOKEN_KEY)||localStorage.getItem(LEGACY_TOKEN_KEY)||"",user:null,view:"dashboard",authMode:"register",knowledge:[],adminSummary:null,adminUsers:[],audit:[]};
 const $=id=>document.getElementById(id); const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -454,7 +527,7 @@ function knowledgeView(){return '<div class="panel" style="margin-top:0"><div cl
 function extensionView(){return '<div class="panel" style="margin-top:0"><div class="panel-head"><h2>LINEOA Chrome 擴充功能</h2><span class="pill">v0.1 免費測試版</span></div><div class="panel-body"><h3>三段式工作台</h3><ol><li>極小懸浮模式</li><li>右側客服面板</li><li>全螢幕三欄工作台</li></ol><p>目前測試版以開發人員模式安裝。下載原始碼後，在 <code>chrome://extensions</code> 選擇「載入未封裝項目」，指定 <code>extension</code> 資料夾。</p><a class="btn btn-primary" href="https://github.com/fangwl591021/LINEOA" target="_blank" rel="noreferrer">前往下載測試版</a></div></div>'}
 function planView(){return '<div class="cards"><div class="card"><div class="label">基礎方案</div><div class="value">FREE</div></div><div class="card"><div class="label">圖文選單</div><div class="value" style="font-size:18px">試用 30 天</div></div><div class="card"><div class="label">試用後年費</div><div class="value">NT$199</div></div><div class="card"><div class="label">帳號</div><div class="value" style="font-size:18px">'+esc(state.user.email)+'</div></div></div><div class="panel"><div class="panel-head"><h2>方案功能</h2></div><div class="panel-body"><ul><li>免費版讀取目前可見的最近 5 則聊天室內容</li><li>100 筆雲端知識庫</li><li>本機知識比對與建議回覆</li><li>圖文選單首次開啟享 30 天試用</li><li>試用後 NT$199／年，確認付款後由管理員開通</li><li>人工複製，不自動發送聊天訊息</li></ul></div></div>'}
 function adminUsers(){const s=state.adminSummary||{};return '<div class="cards"><div class="card"><div class="label">註冊用戶</div><div class="value">'+(s.users||0)+'</div></div><div class="card"><div class="label">免費方案</div><div class="value">'+(s.freeUsers||0)+'</div></div><div class="card"><div class="label">知識筆數</div><div class="value">'+(s.knowledgeItems||0)+'</div></div><div class="card"><div class="label">有效登入</div><div class="value">'+(s.activeSessions||0)+'</div></div></div><div class="panel"><div class="panel-head"><h2>使用者管理</h2></div><table><thead><tr><th>使用者</th><th>公司</th><th>方案</th><th>知識庫</th><th>圖文選單</th><th>註冊時間</th></tr></thead><tbody>'+state.adminUsers.map(u=>{const paid=Date.parse(u.rich_menu_subscription_ends_at||"")>Date.now();const trial=Date.parse(u.rich_menu_trial_ends_at||"")>Date.now();const status=paid?"年費至 "+new Date(u.rich_menu_subscription_ends_at).toLocaleDateString("zh-TW"):trial?"試用至 "+new Date(u.rich_menu_trial_ends_at).toLocaleDateString("zh-TW"):"未開始／已到期";return '<tr><td><strong>'+esc(u.display_name)+'</strong><div class="muted">'+esc(u.email)+'</div></td><td>'+esc(u.company_name||"-")+'</td><td><span class="pill">'+esc(u.plan)+'</span></td><td>'+Number(u.knowledge_count||0)+'</td><td><div class="muted">'+esc(status)+'</div><button class="btn" data-rich-menu-activate="'+esc(u.id)+'">收款後開通一年</button></td><td>'+esc(new Date(u.created_at).toLocaleString("zh-TW"))+'</td></tr>'}).join("")+'</tbody></table></div>'}
-function bindAdminUsers(){document.querySelectorAll("[data-rich-menu-activate]").forEach(button=>button.onclick=async()=>{if(!confirm("確認已收到 NT$199，為此用戶開通圖文選單一年？"))return;button.disabled=true;try{await request("/api/admin/users/"+encodeURIComponent(button.dataset.richMenuActivate)+"/features/rich-menu/activate",{method:"POST"});await loadAdmin();await render()}catch(error){alert(error.message)}finally{button.disabled=false}})}
+function bindAdminUsers(){bindAdminAccountForm();document.querySelectorAll("[data-rich-menu-activate]").forEach(button=>button.onclick=async()=>{if(!confirm("確認已收到 NT$199，為此用戶開通圖文選單一年？"))return;button.disabled=true;try{await request("/api/admin/users/"+encodeURIComponent(button.dataset.richMenuActivate)+"/features/rich-menu/activate",{method:"POST"});await loadAdmin();await render()}catch(error){alert(error.message)}finally{button.disabled=false}})}
 function placeholder(title,text){return '<div class="panel" style="margin-top:0"><div class="panel-head"><h2>'+title+'</h2><span class="pill">第一階段</span></div><div class="panel-body"><p>'+text+'</p></div></div>'}
 async function render(){renderNav();const titles={dashboard:"營運總覽",knowledge:"我的知識庫",extension:"擴充功能",plan:"方案與帳戶","admin-users":"使用者管理","admin-plans":"方案管理","admin-versions":"版本管理","admin-audit":"操作紀錄","admin-settings":"系統設定"};$("page-title").textContent=titles[state.view]||"LINEOA";if(state.view==="knowledge"){await loadKnowledge();$("content").innerHTML=knowledgeView();bindKnowledge()}else if(state.view==="admin-users"){await loadAdmin();$("content").innerHTML=adminUsers();bindAdminUsers()}else if(state.view==="dashboard"){await loadKnowledge();$("content").innerHTML=dashboard()}else if(state.view==="extension")$("content").innerHTML=extensionView();else if(state.view==="plan")$("content").innerHTML=planView();else $("content").innerHTML=placeholder(titles[state.view],"此功能已保留於 actionadmin 標準導覽，將在下一階段啟用。")}
 function bindKnowledge(){const form=$("knowledge-form");form.onsubmit=async event=>{event.preventDefault();await request("/api/knowledge",{method:"POST",body:JSON.stringify({category:$("k-category").value,question:$("k-question").value,answer:$("k-answer").value})});await render()};document.querySelectorAll("[data-delete]").forEach(button=>button.onclick=async()=>{if(!confirm("確定刪除這筆知識？"))return;await request("/api/knowledge/"+encodeURIComponent(button.dataset.delete),{method:"DELETE"});await render()})}

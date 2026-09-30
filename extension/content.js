@@ -2,7 +2,7 @@
 
 (() => {
   const ROOT_ID = "lineoa-extension-root";
-  const PANEL_VERSION = chrome.runtime.getManifest?.().version || "0.1.21";
+  const PANEL_VERSION = chrome.runtime.getManifest?.().version || "0.1.22";
   const MODE_KEY = "lineoa_panel_mode";
   const LAYOUT_VERSION_KEY = "lineoa_layout_version";
   const LAYOUT_VERSION = 2;
@@ -106,6 +106,11 @@
 
       if (action === "open-learning") {
         try { await send({ type: "lineoa:learning:open" }); }
+        catch (error) { state.notice = error.message; render(); }
+        return;
+      }
+      if (action === "open-accounts") {
+        try { await send({ type: "lineoa:accounts:open" }); }
         catch (error) { state.notice = error.message; render(); }
         return;
       }
@@ -925,14 +930,18 @@
   function fullAccountView(current, limit) {
     const percentage = Math.min(100, Math.round((current / Math.max(limit, 1)) * 100));
     return `
+      ${noticeView()}
+      ${state.user.role === "admin" ? `<section class="lineoa-admin-card"><div class="lineoa-admin-card-title"><div><h3>用戶帳戶管理</h3><p>建立一般免費帳戶，並指定監控 LINE@</p></div><button class="lineoa-primary" type="button" data-action="open-accounts">新增／管理用戶帳戶</button></div></section>` : ""}
       <div class="lineoa-admin-grid">
         <section class="lineoa-admin-card">
           <div class="lineoa-admin-card-title"><div><h3>帳戶資料</h3><p>目前登入的 LINEOA 帳戶</p></div><span>已登入</span></div>
           <dl class="lineoa-account-details">
             <div><dt>顯示名稱</dt><dd>${escapeHtml(state.user.displayName || "-")}</dd></div>
             <div><dt>Email</dt><dd>${escapeHtml(state.user.email || "-")}</dd></div>
+            <div><dt>指定監控 LINE@</dt><dd>${escapeHtml(state.user.monitoredLineOa || "尚未指定")}</dd></div>
             <div><dt>方案</dt><dd>免費版</dd></div>
           </dl>
+          <p>指定 LINE@ 不代表已驗證歸屬或取得權限；監控仍須登入有權限的 LINE OA 後台。</p>
         </section>
         <section class="lineoa-admin-card">
           <div class="lineoa-admin-card-title"><div><h3>知識庫額度</h3><p>免費方案最多 ${limit} 筆</p></div><span>${percentage}%</span></div>

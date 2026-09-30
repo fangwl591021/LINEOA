@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LINEOA 用戶帳戶管理</title><link rel="stylesheet" href="accounts.css"></head>
+<body>
+<header><div><h1>用戶帳戶管理</h1><small>僅平台管理員可新增帳戶</small></div><button id="close-page" type="button">返回帳戶方案／關閉</button></header>
+<main>
+  <p id="status" role="status" aria-live="polite">確認管理員權限中…</p>
+  <section id="workspace" hidden>
+    <div class="toolbar"><h2>用戶名單</h2><div><button id="refresh" type="button">重新整理</button><button id="new-account" type="button" class="primary">新增帳戶</button></div></div>
+    <form id="create-form" hidden autocomplete="off">
+      <h2>新增一般免費帳戶</h2>
+      <label>姓名（必填）<input name="displayName" required minlength="2" maxlength="80" autocomplete="off"></label>
+      <label>Email（必填）<input name="email" type="email" required maxlength="254" autocomplete="off"></label>
+      <label>公司／品牌<input name="companyName" maxlength="120" autocomplete="off"></label>
+      <label>監控 LINE@（必填）<input name="monitoredLineOa" required maxlength="101" pattern="@[a-zA-Z0-9._\-]{1,100}" placeholder="@abc1234" autocomplete="off"></label>
+      <small>填寫官方帳號的 LINE ID，不是聊天室網址、UID 或 Token。此欄只保存指定監控對象，尚未驗證歸屬，也不限制或授予 LINE 後台權限。</small>
+      <label>初始密碼（必填）<input name="password" type="password" required minlength="8" maxlength="200" autocomplete="new-password"></label>
+      <label>確認密碼（必填）<input name="confirmPassword" type="password" required minlength="8" maxlength="200" autocomplete="new-password"></label>
+      <p>一般用戶 · 免費方案 · 100 筆知識。此功能不授予平台管理員權限、不自動寄送密碼，建立後仍維持你的管理員登入。</p>
+      <div class="actions"><button type="submit" class="primary">確認新增帳戶</button><button id="cancel-create" type="button">取消新增</button></div>
+    </form>
+    <div class="table-wrap"><table><thead><tr><th>姓名／Email</th><th>公司</th><th>監控 LINE@</th><th>角色／方案</th><th>狀態</th></tr></thead><tbody id="users"></tbody></table></div>
+    <small>最多顯示最近建立的 500 筆。初始密碼不會顯示於名單。</small>
+  </section>
+</main><script src="accounts.js"></script>
+</body></html>

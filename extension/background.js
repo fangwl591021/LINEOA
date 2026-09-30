@@ -37,6 +37,24 @@ async function handleMessage(message, sender) {
     return { ok: true, version: chrome.runtime.getManifest().version };
   }
 
+  if (type === "lineoa:accounts:open") {
+    requireLinePage(sender);
+    const session = await apiRequest("/api/auth/me", { token: await requireToken() });
+    if (session.user?.role !== "admin") throw new Error("需要平台管理員權限");
+    await chrome.tabs.create({ url: chrome.runtime.getURL("accounts.html") });
+    return { ok: true };
+  }
+  if (["lineoa:accounts:list", "lineoa:accounts:create"].includes(type)) {
+    if (sender.url?.split(/[?#]/)[0] !== chrome.runtime.getURL("accounts.html")) throw new Error("帳戶操作只能在私有管理頁執行");
+    const token = await requireToken();
+    if (type === "lineoa:accounts:list") return apiRequest("/api/admin/users", { token });
+    const body = message.body || {};
+    return apiRequest("/api/admin/users", { token, method: "POST", body: {
+      displayName: body.displayName, email: body.email, companyName: body.companyName,
+      password: body.password, monitoredLineOa: body.monitoredLineOa
+    } });
+  }
+
   if (type === "lineoa:session") {
     const token = await getToken();
     if (!token) return { ok: true, authenticated: false };
