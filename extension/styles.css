@@ -297,6 +297,7 @@
 }
 
 .lineoa-messages li {
+  white-space: pre-wrap;
   margin: 4px 0;
 }
 

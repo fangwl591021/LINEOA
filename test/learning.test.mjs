@@ -4,6 +4,13 @@ import "../extension/learning-core.js";
 import { handleLearningMessage } from "../extension/learning-background.js";
 const { draftPairs, redact, collectBubbles } = globalThis.LINEOA_LEARNING;
 
+test("quoted question is not mixed into the staff answer", () => {
+  const { stripRepeatedQuote } = globalThis.LINEOA_LEARNING;
+  const previous = [{ role: "customer", text: "若有近視或閃光呢？" }];
+  assert.equal(stripRepeatedQuote("Thera\n若有近視或閃光呢？\n我公司的原廠眼鏡沒有度數", previous), "我公司的原廠眼鏡沒有度數");
+  assert.equal(stripRepeatedQuote("若有近視或閃光呢？請至門市詢問", previous), "若有近視或閃光呢？請至門市詢問");
+});
+
 test("learning groups customer question and subsequent staff answer, without dangling answers", () => {
   assert.deepEqual(draftPairs([
     { role: "agent", text: "這是上一段回覆" },

@@ -16,7 +16,7 @@ const testing = readFileSync(new URL("../extension/TESTING.md", import.meta.url)
 
 test("extension uses a narrow Manifest V3 boundary", () => {
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.1.20");
+  assert.equal(manifest.version, "0.1.21");
   assert.deepEqual(manifest.permissions, ["storage", "activeTab"]);
   assert.deepEqual(manifest.host_permissions, [
     "https://line-oa.fangwl591021.workers.dev/*",
@@ -128,12 +128,13 @@ test("content workflow follows the active chat and has three display modes", () 
   assert.doesNotMatch(content, /action\.fangwl591021\.workers\.dev/);
 });
 
-test("chat.line.biz has a visible central-chat fallback", () => {
-  assert.match(content, /location\.hostname === "chat\.line\.biz"/);
-  assert.match(content, /document\.querySelectorAll\("p, span, div"\)/);
-  assert.match(content, /rect\.left < chatLeft \|\| rect\.right > panelLeft/);
-  assert.match(content, /element\.closest\('button, a, input, textarea, select, nav, header/);
-  assert.match(content, /isInterfaceText/);
+test("conversation preview and QA use the same bubble reader, not arbitrary page text", () => {
+  assert.match(content, /LINEOA_LEARNING.collectBubbles/);
+  assert.doesNotMatch(content, /messageRecords|preferredSelectors/);
+  assert.match(content, /const records = collectVisibleMessages\(\)/);
+  assert.match(content, /onlyIfChanged: true/);
+  assert.match(content, /item.role === "customer"/);
+  assert.match(content, /目前對話（客戶／客服）/);
 });
 test("test instructions state the privacy and no-send boundaries", () => {
   assert.match(testing, /不讀取 Cookie、LINE Token/);

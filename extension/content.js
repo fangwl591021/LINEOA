@@ -2,11 +2,11 @@
 
 (() => {
   const ROOT_ID = "lineoa-extension-root";
-  const PANEL_VERSION = chrome.runtime.getManifest?.().version || "0.1.20";
+  const PANEL_VERSION = chrome.runtime.getManifest?.().version || "0.1.21";
   const MODE_KEY = "lineoa_panel_mode";
   const LAYOUT_VERSION_KEY = "lineoa_layout_version";
   const LAYOUT_VERSION = 2;
-  const MESSAGE_LIMIT = 5;
+  const MESSAGE_LIMIT = 40;
   const state = {
     mode: "float",
     adminView: "overview",
@@ -246,11 +246,13 @@
   }
 
   function scanVisibleConversation(options = {}) {
-    state.messages = collectVisibleMessages();
-    state.suggestions = rankSuggestions(state.messages, state.knowledge);
+    const messages = collectVisibleMessages();
+    if (options.onlyIfChanged && JSON.stringify(messages) === JSON.stringify(state.messages)) return;
+    state.messages = messages;
+    state.suggestions = rankSuggestions(state.messages.filter(item => item.role === "customer").map(item => item.text), state.knowledge);
     const prefix = options.automatic ? "已自動跟隨目前聊天室，" : "";
     state.notice = state.messages.length
-      ? `${prefix}在本機比對 ${state.messages.length} 則目前可見文字，沒有傳送聊天內容`
+      ? `${prefix}已整理 ${state.messages.length} 則客戶／客服對話，依畫面由上往下排列；僅以客戶提問比對題庫`
       : "找不到可見訊息；請確認目前已開啟一對一聊天室";
     render();
   }
@@ -262,10 +264,7 @@
       learning.snapshot = "";
       return;
     }
-    const records = globalThis.LINEOA_LEARNING.collectBubbles(document, {
-      left: Math.min(520, innerWidth * 0.24), right: innerWidth,
-      bottom: innerHeight - 110, exclude: `#${ROOT_ID}`
-    });
+    const records = collectVisibleMessages();
     const drafts = globalThis.LINEOA_LEARNING.draftPairs(records, [state.contact.name, state.user.displayName]);
     const context = `${state.user.id}|${location.href}|${state.contact.uid}`;
     const snapshot = `${context}|${JSON.stringify(drafts)}`;
@@ -310,7 +309,12 @@
 
     setInterval(() => {
       const currentHref = String(location.href || "");
-      if (currentHref === lastObservedHref) return;
+      if (currentHref === lastObservedHref) {
+        if (state.user && !crmBatch.running && state.mode !== "full" && !document.hidden) {
+          scanVisibleConversation({ automatic: true, onlyIfChanged: true });
+        }
+        return;
+      }
       lastObservedHref = currentHref;
       scheduleConversationCheck();
     }, 700);
@@ -610,50 +614,17 @@
   }
 
   function collectVisibleMessages() {
-    const preferredSelectors = [
-      '[data-testid*="message" i]',
-      '[class*="message" i]',
-      '[aria-label*="訊息"]',
-      '[aria-label*="message" i]',
-      '[role="log"] > *',
-      'main [role="listitem"]'
-    ];
-    const preferred = preferredSelectors.flatMap((selector) => Array.from(document.querySelectorAll(selector)));
-    const fallback = location.hostname === "chat.line.biz"
-      ? Array.from(document.querySelectorAll("p, span, div"))
-      : Array.from(document.querySelectorAll('main p, main [dir="auto"], main [role="row"]'));
-    const records = [
-      ...messageRecords(preferred, false),
-      ...messageRecords(fallback, location.hostname === "chat.line.biz")
-    ];
-    const latestByText = new Map();
-    for (const record of records) {
-      const previous = latestByText.get(record.text);
-      if (!previous || record.top >= previous.top) latestByText.set(record.text, record);
-    }
-    return [...latestByText.values()]
-      .sort((left, right) => left.top - right.top || left.left - right.left)
-      .slice(-MESSAGE_LIMIT)
-      .map((record) => record.text);
+    if (location.hostname !== "chat.line.biz") return [];
+    return globalThis.LINEOA_LEARNING.collectBubbles(document, {
+      left: Math.min(520, innerWidth * 0.24), right: innerWidth,
+      top: 150, bottom: innerHeight - 30, exclude: `#${ROOT_ID}`
+    }).slice(-MESSAGE_LIMIT);
   }
 
-  function messageRecords(elements, restrictToChatSurface) {
-    const records = [];
-    const panelLeft = root?.getBoundingClientRect?.().left || innerWidth;
-    const chatLeft = Math.min(520, innerWidth * 0.24);
-    for (const element of [...new Set(elements)]) {
-      if (element.closest(`#${ROOT_ID}`) || !isVisibleInViewport(element) || element.childElementCount > 8) continue;
-      const rect = element.getBoundingClientRect();
-      if (restrictToChatSurface) {
-        if (element.childElementCount > 1) continue;
-        if (element.closest('button, a, input, textarea, select, nav, header, [role="button"]')) continue;
-        if (rect.left < chatLeft || rect.right > panelLeft || rect.top < 150 || rect.bottom > innerHeight - 30) continue;
-      }
-      const text = normalizeDisplayText(element.innerText || element.textContent || "");
-      if (!text || text.length > 600 || isInterfaceText(text)) continue;
-      records.push({ text, top: rect.top, left: rect.left });
-    }
-    return records;
+  function conversationMessagesView() {
+    return state.messages.length ? `<ol class="lineoa-messages">${state.messages.map(item =>
+      `<li><strong>${item.role === "customer" ? "客戶" : item.role === "agent" ? "客服" : "方向待確認"}：</strong>${escapeHtml(item.text)}</li>`
+    ).join("")}</ol>` : emptyCard("目前沒有可辨識的文字氣泡；請將客戶問題和客服回覆顯示在畫面中");
   }
 
   function isInterfaceText(text) {
@@ -925,8 +896,8 @@
       ${noticeView()}
       <div class="lineoa-monitor-layout">
         <section class="lineoa-admin-card">
-          <div class="lineoa-admin-card-title"><div><h3>目前可見文字</h3><p>最多顯示 ${MESSAGE_LIMIT} 則</p></div><span>${state.messages.length}/${MESSAGE_LIMIT}</span></div>
-          ${state.messages.length ? `<ol class="lineoa-messages">${state.messages.map((message) => `<li>${escapeHtml(message)}</li>`).join("")}</ol>` : emptyCard("尚未讀取對話")}
+          <div class="lineoa-admin-card-title"><div><h3>目前對話（客戶／客服）</h3><p>依畫面順序，最多 ${MESSAGE_LIMIT} 則；捲動後自動更新</p></div><span>${state.messages.length} 則</span></div>
+          ${conversationMessagesView()}
         </section>
         <section class="lineoa-admin-card">
           <div class="lineoa-admin-card-title"><div><h3>建議回覆</h3><p>依知識庫相似度排序</p></div><span>${state.suggestions.length}</span></div>
@@ -1022,8 +993,8 @@
       <div class="lineoa-privacy-note">切換聊天室後會自動讀取畫面目前可見文字；比對在瀏覽器內完成，不讀取 Cookie、LINE Token，也不會自動發送。</div>
       ${noticeView()}
       <section class="lineoa-section">
-        <h3>目前可見文字 <span>${state.messages.length}/${MESSAGE_LIMIT}</span></h3>
-        ${state.messages.length ? `<ol class="lineoa-messages">${state.messages.map((message) => `<li>${escapeHtml(message)}</li>`).join("")}</ol>` : emptyCard("尚未讀取對話")}
+        <h3>目前對話（客戶／客服） <span>${state.messages.length} 則</span></h3>
+        ${conversationMessagesView()}
       </section>
       <section class="lineoa-section">
         <h3>建議回覆 <span>${state.suggestions.length}</span></h3>

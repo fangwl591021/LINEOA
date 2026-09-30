@@ -52,17 +52,41 @@
       const blue = b - r > 15 && b >= g;
       const gray = Math.max(r, g, b) - Math.min(r, g, b) < 20 && r >= 210 && r <= 248;
       if (!blue && !gray) continue;
-      const text = element.innerText?.trim();
+      const text = readBubbleText(element);
       if (!text || text.length > 4000 || /^(已讀|今天|昨天|\d{1,2}:\d{2})$/.test(text)) continue;
       const center = (rect.left + rect.right) / 2;
       // Deliberately conservative: labels, cards and ambiguous centered bubbles are not evidence.
-      const role = blue && center > (left + right) / 2 ? "agent"
+      // Long blue staff replies may extend left of the viewport midpoint.
+      const role = blue ? "agent"
         : gray && center < (left + right) / 2 ? "customer" : "unknown";
       candidates.push({ element, rect, text, role });
     }
-    return candidates.filter(item => !candidates.some(parent => parent !== item && parent.element.contains(item.element)))
+    const records = candidates.filter(item => !candidates.some(parent => parent !== item && parent.element.contains(item.element)))
       .sort((a, b) => a.rect.top - b.rect.top).slice(-40)
       .map(({ text, role }) => ({ text, role }));
+    return records.map((record, index) => ({ ...record, text: stripRepeatedQuote(record.text, records.slice(0, index)) }));
   }
-  globalThis.LINEOA_LEARNING = { redact, draftPairs, collectBubbles };
+
+  function readBubbleText(element) {
+    const selector = 'blockquote,[data-testid*="quote" i],[class*="quoted" i],[class*="quotation" i],[class*="reply-preview" i],[class*="replyPreview"]';
+    if (!element.querySelector?.(selector)) return element.innerText?.trim() || "";
+    const clone = element.cloneNode(true);
+    clone.querySelectorAll(selector).forEach(node => node.remove());
+    return clone.textContent?.trim() || "";
+  }
+
+  function stripRepeatedQuote(text, previous) {
+    // A quoted earlier message has a separate line for the actual reply.
+    // Never remove matching words from an ordinary single-line answer.
+    for (const record of [...previous].reverse()) {
+      if (!record.text || record.text.length < 4) continue;
+      const at = text.indexOf(record.text);
+      if (at < 0 || at > 80) continue;
+      const suffix = text.slice(at + record.text.length);
+      const prefix = text.slice(0, at).trim();
+      if (/^\s*\n/.test(suffix) && suffix.trim() && prefix.split("\n").length <= 2) return suffix.trim();
+    }
+    return text;
+  }
+  globalThis.LINEOA_LEARNING = { redact, draftPairs, collectBubbles, stripRepeatedQuote };
 })();
