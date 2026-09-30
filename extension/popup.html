@@ -7,8 +7,10 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <header><span>LO</span><div><strong>LINEOA</strong><small>免審查測試版 v0.1.12</small></div></header>
+  <header><span>LO</span><div><strong>LINEOA</strong><small id="installed-version">讀取版本中…</small></div></header>
   <p id="status">確認目前頁面中…</p>
+  <p id="background-status" role="status">確認背景連線中…</p>
+  <button id="reload-page" type="button" disabled>重整目前 LINE 頁面</button>
   <button id="open-manager" type="button">開啟 LINE OA Manager</button>
   <button id="open-app" class="secondary" type="button">管理 LINEOA 知識庫</button>
   <button id="open-settings" class="secondary" type="button">串接設定</button>

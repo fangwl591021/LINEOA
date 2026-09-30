@@ -2,10 +2,11 @@
 
 (() => {
   const ROOT_ID = "lineoa-extension-root";
+  const PANEL_VERSION = chrome.runtime.getManifest?.().version || "0.1.23";
   const MODE_KEY = "lineoa_panel_mode";
   const LAYOUT_VERSION_KEY = "lineoa_layout_version";
   const LAYOUT_VERSION = 2;
-  const MESSAGE_LIMIT = 5;
+  const MESSAGE_LIMIT = 40;
   const state = {
     mode: "float",
     adminView: "overview",
@@ -22,6 +23,7 @@
     loading: true,
     notice: ""
   };
+  const learning = { enabled: true, status: "等待穩定的客戶問題與客服回覆", snapshot: "", saved: "", busy: false, retryAt: 0 };
 
   let root;
 
@@ -34,9 +36,15 @@
     root.id = ROOT_ID;
     root.setAttribute("aria-label", "LINEOA 客服輔助工具");
     document.documentElement.appendChild(root);
+    chrome.runtime.onMessage?.addListener((message, _sender, respond) => {
+      if (message?.type === "lineoa:panel-version") respond({ ok: true, version: PANEL_VERSION });
+    });
     bindRootEvents();
     observeReinsertion();
-    await globalThis.LINEOA_CRM.init(() => render());
+    await globalThis.LINEOA_CRM.init(() => render(), {
+      start: startCrmBatch,
+      stop: stopCrmBatch
+    });
 
     const stored = await chrome.storage.local.get([MODE_KEY, LAYOUT_VERSION_KEY]);
     if (stored[LAYOUT_VERSION_KEY] === LAYOUT_VERSION && ["float", "side", "full"].includes(stored[MODE_KEY])) {
@@ -45,7 +53,19 @@
       await chrome.storage.local.set({ [MODE_KEY]: "float", [LAYOUT_VERSION_KEY]: LAYOUT_VERSION });
     }
     await restoreSession();
+    const learningPreference = await chrome.storage.local.get("lineoa_learning_enabled");
+    learning.enabled = learningPreference.lineoa_learning_enabled !== false;
+    chrome.storage.onChanged?.addListener((changes, area) => {
+      if (area === "local" && changes.lineoa_learning_enabled) {
+        learning.enabled = changes.lineoa_learning_enabled.newValue !== false;
+        learning.snapshot = "";
+        render();
+      }
+    });
+    render();
     startConversationTracking();
+    setInterval(captureLearningDrafts, 2000);
+    scheduleCrmAutoBatch();
   }
 
   async function restoreSession() {
@@ -78,6 +98,28 @@
       const button = event.target.closest("button[data-action]");
       if (!button) return;
       const action = button.dataset.action;
+
+      if (action === "reload-page") {
+        if (window.confirm("重整目前 LINE 頁面以載入最新版 LINEOA？未送出的文字可能遺失，請先複製保存。")) location.reload();
+        return;
+      }
+
+      if (action === "open-learning") {
+        try { await send({ type: "lineoa:learning:open" }); }
+        catch (error) { state.notice = error.message; render(); }
+        return;
+      }
+      if (action === "open-accounts") {
+        try { await send({ type: "lineoa:accounts:open" }); }
+        catch (error) { state.notice = error.message; render(); }
+        return;
+      }
+      if (action === "learning-toggle") {
+        learning.enabled = !learning.enabled;
+        learning.snapshot = "";
+        await chrome.storage.local.set({ lineoa_learning_enabled: learning.enabled });
+        return render();
+      }
 
       if (action.startsWith("crm-")) {
         await globalThis.LINEOA_CRM.handleClick(action, button, state.contact);
@@ -127,7 +169,7 @@
     });
 
     root.addEventListener("submit", async (event) => {
-      if (event.target.id === "lineoa-crm-form") {
+      if (["lineoa-crm-form", "lineoa-crm-url-form"].includes(event.target.id)) {
         event.preventDefault();
         await globalThis.LINEOA_CRM.handleSubmit(event.target);
         return;
@@ -166,6 +208,7 @@
       await loadKnowledge();
       state.notice = "登入成功，知識庫已同步";
       if (state.conversationKey) scanVisibleConversation({ automatic: true });
+      scheduleCrmAutoBatch();
     } catch (error) {
       state.notice = error.message;
     } finally {
@@ -208,17 +251,53 @@
   }
 
   function scanVisibleConversation(options = {}) {
-    state.messages = collectVisibleMessages();
-    state.suggestions = rankSuggestions(state.messages, state.knowledge);
+    const messages = collectVisibleMessages();
+    if (options.onlyIfChanged && JSON.stringify(messages) === JSON.stringify(state.messages)) return;
+    state.messages = messages;
+    state.suggestions = rankSuggestions(state.messages.filter(item => item.role === "customer").map(item => item.text), state.knowledge);
     const prefix = options.automatic ? "已自動跟隨目前聊天室，" : "";
     state.notice = state.messages.length
-      ? `${prefix}在本機比對 ${state.messages.length} 則目前可見文字，沒有傳送聊天內容`
+      ? `${prefix}已整理 ${state.messages.length} 則客戶／客服對話，依畫面由上往下排列；僅以客戶提問比對題庫`
       : "找不到可見訊息；請確認目前已開啟一對一聊天室";
     render();
   }
 
   let conversationCheckTimer = 0;
+  async function captureLearningDrafts() {
+    if (Date.now() < learning.retryAt) return;
+    if (!learning.enabled || learning.busy || !state.user || !state.contact.uid || crmBatch.running || document.hidden || state.mode === "full" || location.hostname !== "chat.line.biz") {
+      learning.snapshot = "";
+      return;
+    }
+    const records = collectVisibleMessages();
+    const drafts = globalThis.LINEOA_LEARNING.draftPairs(records, [state.contact.name, state.user.displayName]);
+    const context = `${state.user.id}|${location.href}|${state.contact.uid}`;
+    const snapshot = `${context}|${JSON.stringify(drafts)}`;
+    if (snapshot !== learning.snapshot) { learning.snapshot = snapshot; return; }
+    if (!drafts.length || snapshot === learning.saved) return;
+    learning.busy = true;
+    try {
+      const result = await send({ type: "lineoa:learning:add", userId: state.user.id, items: drafts });
+      learning.saved = snapshot;
+      learning.status = result.full ? "本機草稿已達 200 筆，請先整理" : result.added ? `已生成 ${result.added} 筆 QA 草稿，請檢查修正` : "相同問答已整理，不重複建檔";
+      render();
+    } catch (error) {
+      learning.retryAt = Date.now() + 30000;
+      if (learning.status !== error.message) { learning.status = error.message; render(); }
+    } finally { learning.busy = false; }
+  }
+
+  function learningView() {
+    return `<section class="lineoa-section"><h3>對話學習 · QA 草稿</h3>
+      <div class="lineoa-actions"><button type="button" data-action="learning-toggle">本機學習：${learning.enabled ? "開啟（點此暫停）" : "已暫停（點此啟用）"}</button><button type="button" data-action="open-learning">檢查／修正 QA</button></div>
+      <div class="lineoa-privacy-note">${escapeHtml(learning.enabled ? learning.status : "已暫停生成草稿")}。自動整理目前可見的問答；草稿保留本機，人工確認才上傳。個資遮蔽仍需複核，不會自動發送訊息。</div></section>`;
+  }
   let lastObservedHref = "";
+  const crmBatch = {
+    running: false,
+    cancelled: false,
+    autoStarted: false
+  };
 
   function startConversationTracking() {
     if (typeof location === "undefined" || location.hostname !== "chat.line.biz") return;
@@ -235,7 +314,12 @@
 
     setInterval(() => {
       const currentHref = String(location.href || "");
-      if (currentHref === lastObservedHref) return;
+      if (currentHref === lastObservedHref) {
+        if (state.user && !crmBatch.running && state.mode !== "full" && !document.hidden) {
+          scanVisibleConversation({ automatic: true, onlyIfChanged: true });
+        }
+        return;
+      }
       lastObservedHref = currentHref;
       scheduleConversationCheck();
     }, 700);
@@ -257,7 +341,10 @@
     const conversationChanged = force || nextKey !== state.conversationKey;
     state.contact = next;
     if (!conversationChanged) {
-      if (profileChanged) render();
+      if (profileChanged) {
+        render();
+        globalThis.LINEOA_CRM.followConversation(next);
+      }
       return;
     }
 
@@ -310,6 +397,198 @@
     return { uid, name, avatarUrl };
   }
 
+  async function startCrmBatch(onProgress) {
+    if (location.hostname !== "chat.line.biz") throw new Error("請先進入 LINE OA 聊天室再啟動批次掃描");
+    if (crmBatch.running) throw new Error("批次掃描已在執行中");
+    crmBatch.running = true;
+    crmBatch.cancelled = false;
+    const progress = { running: true, discovered: 0, completed: 0, saved: 0, skipped: 0, failed: 0, waitingRounds: 0 };
+    const processed = new Set();
+    let scrollContainer = null;
+    let idleRounds = 0;
+    await moveConversationListToTop();
+
+    try {
+      while (!crmBatch.cancelled && progress.completed < 2000) {
+        const rows = findConversationRows().filter((item) => !processed.has(item.key));
+        progress.discovered = processed.size + rows.length;
+        onProgress?.({ ...progress });
+
+        for (const item of rows) {
+          if (crmBatch.cancelled) break;
+          processed.add(item.key);
+          if (item.uid && globalThis.LINEOA_CRM.hasContactUid(item.uid)) {
+            progress.skipped += 1;
+            progress.completed += 1;
+            progress.discovered = Math.max(progress.discovered, processed.size);
+            onProgress?.({ ...progress });
+            continue;
+          }
+          const beforeUid = readUidFromLocation();
+          item.element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+          const contact = await waitForConversationContact(beforeUid, item.uid);
+          if (!contact) {
+            progress.skipped += 1;
+          } else {
+            try {
+              const result = await globalThis.LINEOA_CRM.captureBatchContact(contact);
+              if (result) progress.saved += 1;
+              else progress.skipped += 1;
+            } catch {
+              progress.failed += 1;
+            }
+          }
+          progress.completed += 1;
+          progress.discovered = Math.max(progress.discovered, processed.size);
+          onProgress?.({ ...progress });
+          await delay(250);
+        }
+
+        if (crmBatch.cancelled) break;
+        scrollContainer = findConversationScrollContainer() || scrollContainer;
+        if (!scrollContainer) {
+          idleRounds += 1;
+          progress.waitingRounds = idleRounds;
+          onProgress?.({ ...progress });
+          if (idleRounds >= 6) break;
+          await delay(1500);
+          continue;
+        }
+        const beforeHeight = scrollContainer.scrollHeight;
+        const maxTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
+        const nextTop = Math.min(
+          maxTop,
+          scrollContainer.scrollTop + Math.max(180, Math.floor(scrollContainer.clientHeight * 0.72))
+        );
+        if (nextTop > scrollContainer.scrollTop + 2) {
+          scrollContainer.scrollTop = nextTop;
+        } else {
+          scrollContainer.scrollTop = maxTop;
+        }
+        scrollContainer.dispatchEvent(new Event("scroll", { bubbles: true }));
+        await delay(rows.length ? 900 : 1500);
+        const refreshedContainer = findConversationScrollContainer() || scrollContainer;
+        const heightGrew = refreshedContainer.scrollHeight > beforeHeight + 4;
+        const hasNewRows = findConversationRows().some((item) => !processed.has(item.key));
+        if (heightGrew || hasNewRows) idleRounds = 0;
+        else idleRounds += 1;
+        progress.waitingRounds = idleRounds;
+        onProgress?.({ ...progress });
+        if (idleRounds >= 6) break;
+      }
+    } finally {
+      crmBatch.running = false;
+      progress.running = false;
+      progress.cancelled = crmBatch.cancelled;
+      onProgress?.({ ...progress });
+    }
+    return progress;
+  }
+
+  function stopCrmBatch() {
+    crmBatch.cancelled = true;
+  }
+  function scheduleCrmAutoBatch() {
+    if (typeof location === "undefined" || location.hostname !== "chat.line.biz" || !state.user || crmBatch.autoStarted) return;
+    crmBatch.autoStarted = true;
+    setTimeout(() => {
+      if (!state.user || crmBatch.running) return;
+      globalThis.LINEOA_CRM.startAutomaticBatch();
+    }, 2500);
+  }
+
+  async function moveConversationListToTop() {
+    for (let attempt = 0; attempt < 12 && !crmBatch.cancelled; attempt += 1) {
+      const rows = findConversationRows();
+      if (rows.length) {
+        const container = findConversationScrollContainer();
+        if (container) {
+          container.scrollTop = 0;
+          container.dispatchEvent(new Event("scroll", { bubbles: true }));
+          await delay(900);
+        }
+        return;
+      }
+      await delay(500);
+    }
+  }
+
+  function findConversationRows() {
+    const viewportRight = Math.min(640, innerWidth * 0.42);
+    const anchors = Array.from(document.querySelectorAll('a[href*="/chat/"]'));
+    const candidates = [...new Set([
+      ...anchors,
+      ...Array.from(document.querySelectorAll('[role="listitem"], [role="link"], [role="button"]')),
+      ...Array.from(document.querySelectorAll("img")).map((image) => conversationRowFromAvatar(image, viewportRight)).filter(Boolean)
+    ])];
+    const rows = [];
+    const seen = new Set();
+
+    for (const element of candidates) {
+      if (element.closest?.(`#${ROOT_ID}`) || !isVisibleInViewport(element)) continue;
+      const rect = element.getBoundingClientRect();
+      if (rect.left < 45 || rect.right > viewportRight || rect.top < 100 || rect.height < 42 || rect.height > 170 || rect.width < 180) continue;
+      if (!element.querySelector?.("img")) continue;
+      const href = element.href || element.getAttribute?.("href") || "";
+      const uidMatch = String(href).match(/\/chat\/(U[0-9a-f]{32})(?:[/?#]|$)/i);
+      const label = normalizeDisplayText(element.innerText || element.textContent || "");
+      if (!uidMatch && !label) continue;
+      const image = element.querySelector("img");
+      const key = uidMatch?.[1]?.toLowerCase() || `${label}|${safeAvatarUrl(image?.currentSrc || image?.src || "")}`;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ element, key, uid: uidMatch?.[1] || "" });
+    }
+    return rows.sort((left, right) => left.element.getBoundingClientRect().top - right.element.getBoundingClientRect().top);
+  }
+
+  function conversationRowFromAvatar(image, viewportRight) {
+    if (!isVisibleInViewport(image)) return null;
+    const imageRect = image.getBoundingClientRect();
+    if (imageRect.left < 45 || imageRect.right > viewportRight || imageRect.top < 100) return null;
+    if (imageRect.width < 28 || imageRect.width > 96 || imageRect.height < 28 || imageRect.height > 96) return null;
+    let element = image.parentElement;
+    while (element && element !== document.body) {
+      const rect = element.getBoundingClientRect();
+      if (rect.left >= 45 && rect.right <= viewportRight && rect.top >= 100
+        && rect.width >= 180 && rect.height >= 42 && rect.height <= 170) return element;
+      element = element.parentElement;
+    }
+    return null;
+  }
+
+  function findConversationScrollContainer() {
+    const rows = findConversationRows();
+    if (!rows.length) return null;
+    let element = rows[0].element.parentElement;
+    while (element && element !== document.body) {
+      const rect = element.getBoundingClientRect();
+      if (rect.left < 540 && element.scrollHeight > element.clientHeight + 40 && element.clientHeight > 200) return element;
+      element = element.parentElement;
+    }
+    return null;
+  }
+
+  async function waitForConversationContact(beforeUid, expectedUid) {
+    const startedAt = Date.now();
+    while (!crmBatch.cancelled && Date.now() - startedAt < 8000) {
+      const contact = readActiveContact();
+      const uidMatches = expectedUid
+        ? contact.uid.toLowerCase() === expectedUid.toLowerCase()
+        : contact.uid && contact.uid !== beforeUid;
+      if (uidMatches && (contact.name || contact.avatarUrl)) {
+        await delay(650);
+        return readActiveContact();
+      }
+      await delay(200);
+    }
+    return null;
+  }
+
+  function delay(milliseconds) {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  }
+
   function readUidFromLocation() {
     if (typeof location === "undefined") return "";
     const match = String(location.pathname || "").match(/\/chat\/([^/?#]+)/i);
@@ -340,50 +619,17 @@
   }
 
   function collectVisibleMessages() {
-    const preferredSelectors = [
-      '[data-testid*="message" i]',
-      '[class*="message" i]',
-      '[aria-label*="訊息"]',
-      '[aria-label*="message" i]',
-      '[role="log"] > *',
-      'main [role="listitem"]'
-    ];
-    const preferred = preferredSelectors.flatMap((selector) => Array.from(document.querySelectorAll(selector)));
-    const fallback = location.hostname === "chat.line.biz"
-      ? Array.from(document.querySelectorAll("p, span, div"))
-      : Array.from(document.querySelectorAll('main p, main [dir="auto"], main [role="row"]'));
-    const records = [
-      ...messageRecords(preferred, false),
-      ...messageRecords(fallback, location.hostname === "chat.line.biz")
-    ];
-    const latestByText = new Map();
-    for (const record of records) {
-      const previous = latestByText.get(record.text);
-      if (!previous || record.top >= previous.top) latestByText.set(record.text, record);
-    }
-    return [...latestByText.values()]
-      .sort((left, right) => left.top - right.top || left.left - right.left)
-      .slice(-MESSAGE_LIMIT)
-      .map((record) => record.text);
+    if (location.hostname !== "chat.line.biz") return [];
+    return globalThis.LINEOA_LEARNING.collectBubbles(document, {
+      left: Math.min(520, innerWidth * 0.24), right: innerWidth,
+      top: 150, bottom: innerHeight - 30, exclude: `#${ROOT_ID}`
+    }).slice(-MESSAGE_LIMIT);
   }
 
-  function messageRecords(elements, restrictToChatSurface) {
-    const records = [];
-    const panelLeft = root?.getBoundingClientRect?.().left || innerWidth;
-    const chatLeft = Math.min(520, innerWidth * 0.24);
-    for (const element of [...new Set(elements)]) {
-      if (element.closest(`#${ROOT_ID}`) || !isVisibleInViewport(element) || element.childElementCount > 8) continue;
-      const rect = element.getBoundingClientRect();
-      if (restrictToChatSurface) {
-        if (element.childElementCount > 1) continue;
-        if (element.closest('button, a, input, textarea, select, nav, header, [role="button"]')) continue;
-        if (rect.left < chatLeft || rect.right > panelLeft || rect.top < 150 || rect.bottom > innerHeight - 30) continue;
-      }
-      const text = normalizeDisplayText(element.innerText || element.textContent || "");
-      if (!text || text.length > 600 || isInterfaceText(text)) continue;
-      records.push({ text, top: rect.top, left: rect.left });
-    }
-    return records;
+  function conversationMessagesView() {
+    return state.messages.length ? `<ol class="lineoa-messages">${state.messages.map(item =>
+      `<li><strong>${item.role === "customer" ? "客戶" : item.role === "agent" ? "客服" : "方向待確認"}：</strong>${escapeHtml(item.text)}</li>`
+    ).join("")}</ol>` : emptyCard("目前沒有可辨識的文字氣泡；請將客戶問題和客服回覆顯示在畫面中");
   }
 
   function isInterfaceText(text) {
@@ -461,7 +707,7 @@
   function send(message) {
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) return reject(new Error("LINEOA 背景服務未連線"));
+        if (chrome.runtime.lastError) return reject(new Error("LINEOA 背景服務未連線；請按右上「重整」。若仍失敗，請檢查 Chrome 擴充功能的錯誤訊息。"));
         if (!response?.ok) return reject(new Error(response?.message || "LINEOA 操作失敗"));
         resolve(response);
       });
@@ -495,8 +741,9 @@
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.12</small></div>
+          <div><strong>LINEOA</strong><small>聊天室監控 v${escapeHtml(PANEL_VERSION)}</small></div>
           <nav aria-label="顯示模式">
+            <button type="button" data-action="reload-page" title="重整目前 LINE 頁面並載入新版 LINEOA" aria-label="重整目前 LINE 頁面">↻</button>
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
             <button type="button" data-action="mode" data-mode="full" title="開啟管理全版">□</button>
           </nav>
@@ -531,7 +778,7 @@
     return `
       <section class="lineoa-admin-shell" aria-live="polite">
         <aside class="lineoa-admin-sidebar">
-          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.12</small></div></div>
+          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v${escapeHtml(PANEL_VERSION)}</small></div></div>
           <nav>
             ${groupHeader("service", "📦", "服務中心")}
             ${state.adminGroups.service ? `
@@ -554,6 +801,7 @@
             <div class="lineoa-admin-header-actions">
               <span class="lineoa-channel-status"><i></i>通道正常</span>
               <button type="button" data-action="sync" ${state.user ? "" : "disabled"}>重新同步</button>
+              <button type="button" data-action="reload-page">重整頁面</button>
               <button type="button" data-action="mode" data-mode="side" title="回到側邊監控">縮小</button>
               <button type="button" data-action="mode" data-mode="float" title="收合">×</button>
             </div>
@@ -644,6 +892,7 @@
 
   function fullMonitorView() {
     return `
+      ${learningView()}
       ${contactView("wide")}
       <div class="lineoa-admin-toolbar">
         <div><strong>客服對話分析</strong><span>自動跟隨目前聊天室可見訊息，於本機比對知識庫</span></div>
@@ -652,8 +901,8 @@
       ${noticeView()}
       <div class="lineoa-monitor-layout">
         <section class="lineoa-admin-card">
-          <div class="lineoa-admin-card-title"><div><h3>目前可見文字</h3><p>最多顯示 ${MESSAGE_LIMIT} 則</p></div><span>${state.messages.length}/${MESSAGE_LIMIT}</span></div>
-          ${state.messages.length ? `<ol class="lineoa-messages">${state.messages.map((message) => `<li>${escapeHtml(message)}</li>`).join("")}</ol>` : emptyCard("尚未讀取對話")}
+          <div class="lineoa-admin-card-title"><div><h3>目前對話（客戶／客服）</h3><p>依畫面順序，最多 ${MESSAGE_LIMIT} 則；捲動後自動更新</p></div><span>${state.messages.length} 則</span></div>
+          ${conversationMessagesView()}
         </section>
         <section class="lineoa-admin-card">
           <div class="lineoa-admin-card-title"><div><h3>建議回覆</h3><p>依知識庫相似度排序</p></div><span>${state.suggestions.length}</span></div>
@@ -665,6 +914,7 @@
 
   function fullKnowledgeView(current, limit) {
     return `
+      ${learningView()}
       <div class="lineoa-admin-toolbar">
         <div><strong>知識庫內容</strong><span>免費版 ${current}/${limit} 筆</span></div>
         <div><button type="button" data-action="sync">同步知識庫</button><a href="https://line-oa.fangwl591021.workers.dev/app" target="_blank" rel="noreferrer">新增與編輯</a></div>
@@ -680,14 +930,18 @@
   function fullAccountView(current, limit) {
     const percentage = Math.min(100, Math.round((current / Math.max(limit, 1)) * 100));
     return `
+      ${noticeView()}
+      ${state.user.role === "admin" ? `<section class="lineoa-admin-card"><div class="lineoa-admin-card-title"><div><h3>用戶帳戶管理</h3><p>建立一般免費帳戶，並指定監控 LINE@</p></div><button class="lineoa-primary" type="button" data-action="open-accounts">新增／管理用戶帳戶</button></div></section>` : ""}
       <div class="lineoa-admin-grid">
         <section class="lineoa-admin-card">
           <div class="lineoa-admin-card-title"><div><h3>帳戶資料</h3><p>目前登入的 LINEOA 帳戶</p></div><span>已登入</span></div>
           <dl class="lineoa-account-details">
             <div><dt>顯示名稱</dt><dd>${escapeHtml(state.user.displayName || "-")}</dd></div>
             <div><dt>Email</dt><dd>${escapeHtml(state.user.email || "-")}</dd></div>
+            <div><dt>指定監控 LINE@</dt><dd>${escapeHtml(state.user.monitoredLineOa || "尚未指定")}</dd></div>
             <div><dt>方案</dt><dd>免費版</dd></div>
           </dl>
+          <p>指定 LINE@ 不代表已驗證歸屬或取得權限；監控仍須登入有權限的 LINE OA 後台。</p>
         </section>
         <section class="lineoa-admin-card">
           <div class="lineoa-admin-card-title"><div><h3>知識庫額度</h3><p>免費方案最多 ${limit} 筆</p></div><span>${percentage}%</span></div>
@@ -740,6 +994,7 @@
         <button type="button" data-action="logout">登出</button>
       </div>
       ${contactView()}
+      ${learningView()}
       <div class="lineoa-actions">
         <button class="lineoa-primary" type="button" data-action="scan">重新讀取目前聊天室</button>
         <button type="button" data-action="sync">同步知識庫</button>
@@ -747,8 +1002,8 @@
       <div class="lineoa-privacy-note">切換聊天室後會自動讀取畫面目前可見文字；比對在瀏覽器內完成，不讀取 Cookie、LINE Token，也不會自動發送。</div>
       ${noticeView()}
       <section class="lineoa-section">
-        <h3>目前可見文字 <span>${state.messages.length}/${MESSAGE_LIMIT}</span></h3>
-        ${state.messages.length ? `<ol class="lineoa-messages">${state.messages.map((message) => `<li>${escapeHtml(message)}</li>`).join("")}</ol>` : emptyCard("尚未讀取對話")}
+        <h3>目前對話（客戶／客服） <span>${state.messages.length} 則</span></h3>
+        ${conversationMessagesView()}
       </section>
       <section class="lineoa-section">
         <h3>建議回覆 <span>${state.suggestions.length}</span></h3>

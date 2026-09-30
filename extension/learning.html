@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LINEOA 對話學習與 QA 草稿</title><link rel="stylesheet" href="learning.css"></head>
+<body>
+  <header><div><h1>對話學習 · QA 草稿</h1><span>先修正、再確認，才能成為正式題庫。</span></div><nav><button id="back">返回聊天室／關閉</button><button id="refresh">重新整理</button></nav></header>
+  <main>
+    <section class="notice">這是本機規則整理，不是 AI 模型訓練。僅辨識目前畫面載入的文字氣泡，不讀取圖片、語音或完整歷史。左右位置可能辨識錯誤，姓名、地址及其他個資也可能未完全遮蔽，請逐筆確認並改寫為通用 QA。草稿僅存在這台瀏覽器；只有確認加入題庫後才上傳 LINEOA，免費題庫仍限 100 筆。</section>
+    <p id="status" role="status" aria-live="polite"></p>
+    <label>顯示 <select id="filter"><option value="pending">待確認</option><option value="approved">已加入題庫</option><option value="all">全部</option></select></label>
+    <div id="drafts"></div>
+  </main>
+  <script src="learning.js"></script>
+</body></html>

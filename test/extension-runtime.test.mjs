@@ -5,6 +5,7 @@ import vm from "node:vm";
 
 const contentSource = readFileSync(new URL("../extension/content.js", import.meta.url), "utf8");
 const crmSource = readFileSync(new URL("../extension/crm.js", import.meta.url), "utf8");
+const learningSource = readFileSync(new URL("../extension/learning-core.js", import.meta.url), "utf8");
 
 test("content script inserts one isolated panel and switches modes without touching the host page", async () => {
   const listeners = new Map();
@@ -75,6 +76,7 @@ test("content script inserts one isolated panel and switches modes without touch
     innerWidth: 1400,
     MutationObserver,
     navigator: { clipboard: { async writeText() {} } },
+    setInterval() { return 1; },
     URL
   });
 
@@ -136,9 +138,10 @@ test("content script inserts one isolated panel and switches modes without touch
   assert.equal(hostPage.mutations, 0);
 });
 
-test("chat.line.biz fallback reads central visible bubbles and excludes the left account list", async () => {
+test("chat.line.biz preview reads role-labeled bubbles and refreshes within the same chat", async () => {
   const listeners = new Map();
   const observerCallbacks = [];
+  const intervalCallbacks = [];
   let root = null;
 
   function candidate(text, left, top, options = {}) {
@@ -146,6 +149,12 @@ test("chat.line.biz fallback reads central visible bubbles and excludes the left
       childElementCount: 0,
       innerText: text,
       textContent: text,
+      contains() { return false; },
+      style: {
+        display: "block", visibility: "visible", opacity: "1",
+        borderTopLeftRadius: "16px", borderTopRightRadius: "16px", borderBottomLeftRadius: "16px", borderBottomRightRadius: "16px",
+        backgroundColor: options.label ? "rgba(0, 0, 0, 0)" : left > 900 ? "rgb(185, 214, 255)" : "rgb(241, 242, 244)"
+      },
       closest(selector) {
         if (selector.includes("#lineoa-extension-root")) return null;
         if (options.insideButton && selector.includes("button")) return {};
@@ -171,10 +180,12 @@ test("chat.line.biz fallback reads central visible bubbles and excludes the left
     candidate("左側客戶名單", 80, 360),
     candidate("待處理", 700, 170, { insideButton: true }),
     candidate("每日簽到贈點", 590, 720),
+    candidate("客服姓名不應讀取", 1020, 760, { label: true }),
     candidate("簽到成功，已贈送 5 K點。點數餘額 70 K點。", 1020, 790)
   ];
 
   const document = {
+    defaultView: { getComputedStyle(element) { return element.style; } },
     documentElement: {
       appendChild(element) { root = element; return element; },
       contains(element) { return element === root; }
@@ -195,7 +206,7 @@ test("chat.line.biz fallback reads central visible bubbles and excludes the left
     querySelectorAll(selector) {
       if (selector === "img") return [contactAvatar];
       if (selector.startsWith("h1, h2, h3")) return [contactName];
-      return selector === "p, span, div" ? visibleElements : [];
+      return selector === "div, p" ? visibleElements : [];
     }
   };
 
@@ -235,7 +246,7 @@ test("chat.line.biz fallback reads central visible bubbles and excludes the left
     href: "https://chat.line.biz/Uofficial/chat/U1234567890abcdef1234567890abcdef"
   };
 
-  vm.runInNewContext(`${crmSource}\n${contentSource}`, {
+  vm.runInNewContext(`${crmSource}\n${learningSource}\n${contentSource}`, {
     chrome,
     console: { info() {} },
     document,
@@ -247,7 +258,7 @@ test("chat.line.biz fallback reads central visible bubbles and excludes the left
     MutationObserver,
     setTimeout(callback) { callback(); return 1; },
     clearTimeout() {},
-    setInterval() { return 1; },
+    setInterval(callback) { intervalCallbacks.push(callback); return 1; },
     decodeURIComponent,
     navigator: { clipboard: { async writeText() {} } },
     URL
@@ -266,7 +277,15 @@ test("chat.line.biz fallback reads central visible bubbles and excludes the left
   assert.match(root.innerHTML, /每日簽到贈點/);
   assert.match(root.innerHTML, /簽到成功，已贈送 5 K點/);
   assert.doesNotMatch(root.innerHTML, /左側客戶名單/);
+  assert.doesNotMatch(root.innerHTML, /客服姓名不應讀取/);
+  assert.match(root.innerHTML, /客戶：/);
+  assert.match(root.innerHTML, /客服：/);
   assert.match(root.innerHTML, /已為您確認簽到點數/);
+
+  visibleElements.push(candidate("新的客戶問題", 590, 870));
+  // The URL-check timer also refreshes messages when the URL has not changed.
+  intervalCallbacks[0]();
+  assert.match(root.innerHTML, /新的客戶問題/);
 
   testLocation.pathname = "/Uofficial/chat/Ufedcba0987654321fedcba0987654321";
   testLocation.href = "https://chat.line.biz/Uofficial/chat/Ufedcba0987654321fedcba0987654321";

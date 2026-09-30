@@ -1,10 +1,13 @@
 import { handleRichMenuMessage, isRichMenuMessage } from "./rich-menu-background.js";
+import { handleLearningMessage } from "./learning-background.js";
 
 "use strict";
 
 const API_BASE = "https://line-oa.fangwl591021.workers.dev";
 const TOKEN_KEY = "lineoa_token";
 const SETTINGS_KEY = "lineoa_integration_settings";
+const CRM_PENDING_URL_KEY = "lineoa_crm_pending_url_capture";
+const CRM_URL_RESULT_KEY = "lineoa_crm_url_capture_result";
 
 chrome.runtime.onInstalled.addListener(() => {
   console.info("LINEOA test extension installed");
@@ -16,7 +19,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  const operation = isRichMenuMessage(message)
+  const operation = String(message?.type || "").startsWith("lineoa:learning:")
+    ? handleLearningMessage(message, sender, { requireToken, apiRequest })
+    : isRichMenuMessage(message)
     ? handleRichMenuMessage(message, sender)
     : handleMessage(message, sender);
   operation
@@ -27,6 +32,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function handleMessage(message, sender) {
   const type = String(message?.type || "");
+
+  if (type === "lineoa:runtime-info") {
+    return { ok: true, version: chrome.runtime.getManifest().version };
+  }
+
+  if (type === "lineoa:accounts:open") {
+    requireLinePage(sender);
+    const session = await apiRequest("/api/auth/me", { token: await requireToken() });
+    if (session.user?.role !== "admin") throw new Error("需要平台管理員權限");
+    await chrome.tabs.create({ url: chrome.runtime.getURL("accounts.html") });
+    return { ok: true };
+  }
+  if (["lineoa:accounts:list", "lineoa:accounts:create", "lineoa:accounts:update"].includes(type)) {
+    if (sender.url?.split(/[?#]/)[0] !== chrome.runtime.getURL("accounts.html")) throw new Error("帳戶操作只能在私有管理頁執行");
+    const token = await requireToken();
+    if (type === "lineoa:accounts:list") return apiRequest("/api/admin/users", { token });
+    const body = message.body || {};
+    if (type === "lineoa:accounts:update") {
+      if (typeof body.id !== "string" || !/^[a-zA-Z0-9-]{1,80}$/.test(body.id)) throw new Error("帳戶識別碼無效");
+      return apiRequest(`/api/admin/users/${encodeURIComponent(body.id)}`, { token, method: "PATCH", body: {
+        displayName: body.displayName, companyName: body.companyName,
+        monitoredLineOa: body.monitoredLineOa, expectedUpdatedAt: body.expectedUpdatedAt
+      } });
+    }
+    return apiRequest("/api/admin/users", { token, method: "POST", body: {
+      displayName: body.displayName, email: body.email, companyName: body.companyName,
+      password: body.password, monitoredLineOa: body.monitoredLineOa
+    } });
+  }
 
   if (type === "lineoa:session") {
     const token = await getToken();
@@ -66,6 +100,23 @@ async function handleMessage(message, sender) {
     return apiRequest("/api/knowledge", { token });
   }
 
+
+  if (type === "lineoa:crm:open-chat") {
+    requireLinePage(sender);
+    await requireToken();
+    const target = sanitizeCrmChatUrl(message.url);
+    await chrome.storage.local.set({
+      [CRM_PENDING_URL_KEY]: { uid: target.uid, expiresAt: Date.now() + 2 * 60 * 1000 }
+    });
+    await chrome.storage.local.remove(CRM_URL_RESULT_KEY);
+    try {
+      await chrome.tabs.create({ url: target.url, active: true });
+    } catch (error) {
+      await chrome.storage.local.remove(CRM_PENDING_URL_KEY);
+      throw error;
+    }
+    return { ok: true, uid: target.uid };
+  }
 
   if (type === "lineoa:crm:list") {
     requireLinePage(sender);
@@ -177,6 +228,25 @@ function sanitizeIntegrationSettings(input, current) {
     if (value) next[field] = value.slice(0, limit);
   }
 
+  return next;
+}
+
+function sanitizeCrmChatUrl(input) {
+  let url;
+  try {
+    url = new URL(String(input || "").trim());
+  } catch {
+    throw new Error("請輸入有效的聊天室網址");
+  }
+  if (url.protocol !== "https:" || url.hostname !== "chat.line.biz") {
+    throw new Error("只允許 chat.line.biz 聊天室網址");
+  }
+  const match = url.pathname.match(/\/chat\/(U[0-9a-f]{32})(?:\/|$)/i);
+  if (!match) throw new Error("網址中找不到有效的 LINE UID");
+  url.hash = "";
+  return { url: url.href, uid: match[1] };
+}
+
 function sanitizeCrmCapture(input) {
   const lineUid = String(input?.lineUid || "").trim().slice(0, 80);
   if (!/^U[0-9a-f]{32}$/i.test(lineUid)) throw new Error("找不到有效的 LINE UID");
@@ -212,8 +282,6 @@ function requireLinePage(sender) {
   if (url.protocol !== "https:" || !["chat.line.biz", "manager.line.biz"].includes(url.hostname)) {
     throw new Error("CRM 只能由 LINE 官方帳號管理頁使用");
   }
-}
-  return next;
 }
 
 function requireOptionsPage(sender) {
