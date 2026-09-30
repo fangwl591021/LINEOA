@@ -1,0 +1,19 @@
+:root { font-family: system-ui, sans-serif; color: #193047; background: #f3f6fa; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+header { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; gap: 20px; padding: 16px 24px; background: white; border-bottom: 1px solid #d7e2ed; }
+h1 { font-size: 22px; margin: 0 0 6px; }
+nav, .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+main { max-width: 1050px; margin: 24px auto; padding: 0 20px; }
+.notice { padding: 18px; border-left: 4px solid #06c755; background: #eaf8f0; line-height: 1.7; }
+button, select, input, textarea { font: inherit; border: 1px solid #c9d8e8; border-radius: 8px; padding: 10px 12px; }
+button { background: white; color: #193047; cursor: pointer; }
+button.primary { background: #087c46; color: white; }
+button:disabled { opacity: .55; cursor: wait; }
+article { padding: 22px; margin: 20px 0; border-radius: 12px; border: 1px solid #d7e2ed; background: white; }
+label { display: block; margin: 12px 0; }
+input:not([type=checkbox]), textarea { display: block; width: 100%; margin-top: 8px; }
+textarea { resize: vertical; min-height: 110px; line-height: 1.6; }
+small { color: #667a8f; overflow-wrap: anywhere; }
+#status { min-height: 24px; color: #aa2222; }
+@media(max-width: 650px) { header { flex-direction: column; gap: 10px; } }

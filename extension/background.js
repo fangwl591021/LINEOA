@@ -1,4 +1,5 @@
 import { handleRichMenuMessage, isRichMenuMessage } from "./rich-menu-background.js";
+import { handleLearningMessage } from "./learning-background.js";
 
 "use strict";
 
@@ -18,7 +19,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  const operation = isRichMenuMessage(message)
+  const operation = String(message?.type || "").startsWith("lineoa:learning:")
+    ? handleLearningMessage(message, sender, { requireToken, apiRequest })
+    : isRichMenuMessage(message)
     ? handleRichMenuMessage(message, sender)
     : handleMessage(message, sender);
   operation

@@ -22,6 +22,7 @@
     loading: true,
     notice: ""
   };
+  const learning = { enabled: true, status: "等待穩定的客戶問題與客服回覆", snapshot: "", saved: "", busy: false, retryAt: 0 };
 
   let root;
 
@@ -48,7 +49,18 @@
       await chrome.storage.local.set({ [MODE_KEY]: "float", [LAYOUT_VERSION_KEY]: LAYOUT_VERSION });
     }
     await restoreSession();
+    const learningPreference = await chrome.storage.local.get("lineoa_learning_enabled");
+    learning.enabled = learningPreference.lineoa_learning_enabled !== false;
+    chrome.storage.onChanged?.addListener((changes, area) => {
+      if (area === "local" && changes.lineoa_learning_enabled) {
+        learning.enabled = changes.lineoa_learning_enabled.newValue !== false;
+        learning.snapshot = "";
+        render();
+      }
+    });
+    render();
     startConversationTracking();
+    setInterval(captureLearningDrafts, 2000);
     scheduleCrmAutoBatch();
   }
 
@@ -82,6 +94,18 @@
       const button = event.target.closest("button[data-action]");
       if (!button) return;
       const action = button.dataset.action;
+
+      if (action === "open-learning") {
+        try { await send({ type: "lineoa:learning:open" }); }
+        catch (error) { state.notice = error.message; render(); }
+        return;
+      }
+      if (action === "learning-toggle") {
+        learning.enabled = !learning.enabled;
+        learning.snapshot = "";
+        await chrome.storage.local.set({ lineoa_learning_enabled: learning.enabled });
+        return render();
+      }
 
       if (action.startsWith("crm-")) {
         await globalThis.LINEOA_CRM.handleClick(action, button, state.contact);
@@ -223,6 +247,38 @@
   }
 
   let conversationCheckTimer = 0;
+  async function captureLearningDrafts() {
+    if (Date.now() < learning.retryAt) return;
+    if (!learning.enabled || learning.busy || !state.user || !state.contact.uid || crmBatch.running || document.hidden || state.mode === "full" || location.hostname !== "chat.line.biz") {
+      learning.snapshot = "";
+      return;
+    }
+    const records = globalThis.LINEOA_LEARNING.collectBubbles(document, {
+      left: Math.min(520, innerWidth * 0.24), right: innerWidth,
+      bottom: innerHeight - 110, exclude: `#${ROOT_ID}`
+    });
+    const drafts = globalThis.LINEOA_LEARNING.draftPairs(records, [state.contact.name, state.user.displayName]);
+    const context = `${state.user.id}|${location.href}|${state.contact.uid}`;
+    const snapshot = `${context}|${JSON.stringify(drafts)}`;
+    if (snapshot !== learning.snapshot) { learning.snapshot = snapshot; return; }
+    if (!drafts.length || snapshot === learning.saved) return;
+    learning.busy = true;
+    try {
+      const result = await send({ type: "lineoa:learning:add", userId: state.user.id, items: drafts });
+      learning.saved = snapshot;
+      learning.status = result.full ? "本機草稿已達 200 筆，請先整理" : result.added ? `已生成 ${result.added} 筆 QA 草稿，請檢查修正` : "相同問答已整理，不重複建檔";
+      render();
+    } catch (error) {
+      learning.retryAt = Date.now() + 30000;
+      if (learning.status !== error.message) { learning.status = error.message; render(); }
+    } finally { learning.busy = false; }
+  }
+
+  function learningView() {
+    return `<section class="lineoa-section"><h3>對話學習 · QA 草稿</h3>
+      <div class="lineoa-actions"><button type="button" data-action="learning-toggle">本機學習：${learning.enabled ? "開啟（點此暫停）" : "已暫停（點此啟用）"}</button><button type="button" data-action="open-learning">檢查／修正 QA</button></div>
+      <div class="lineoa-privacy-note">${escapeHtml(learning.enabled ? learning.status : "已暫停生成草稿")}。自動整理目前可見的問答；草稿保留本機，人工確認才上傳。個資遮蔽仍需複核，不會自動發送訊息。</div></section>`;
+  }
   let lastObservedHref = "";
   const crmBatch = {
     running: false,
@@ -700,7 +756,7 @@
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.18</small></div>
+          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.19</small></div>
           <nav aria-label="顯示模式">
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
             <button type="button" data-action="mode" data-mode="full" title="開啟管理全版">□</button>
@@ -736,7 +792,7 @@
     return `
       <section class="lineoa-admin-shell" aria-live="polite">
         <aside class="lineoa-admin-sidebar">
-          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.18</small></div></div>
+          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.19</small></div></div>
           <nav>
             ${groupHeader("service", "📦", "服務中心")}
             ${state.adminGroups.service ? `
@@ -849,6 +905,7 @@
 
   function fullMonitorView() {
     return `
+      ${learningView()}
       ${contactView("wide")}
       <div class="lineoa-admin-toolbar">
         <div><strong>客服對話分析</strong><span>自動跟隨目前聊天室可見訊息，於本機比對知識庫</span></div>
@@ -870,6 +927,7 @@
 
   function fullKnowledgeView(current, limit) {
     return `
+      ${learningView()}
       <div class="lineoa-admin-toolbar">
         <div><strong>知識庫內容</strong><span>免費版 ${current}/${limit} 筆</span></div>
         <div><button type="button" data-action="sync">同步知識庫</button><a href="https://line-oa.fangwl591021.workers.dev/app" target="_blank" rel="noreferrer">新增與編輯</a></div>
@@ -945,6 +1003,7 @@
         <button type="button" data-action="logout">登出</button>
       </div>
       ${contactView()}
+      ${learningView()}
       <div class="lineoa-actions">
         <button class="lineoa-primary" type="button" data-action="scan">重新讀取目前聊天室</button>
         <button type="button" data-action="sync">同步知識庫</button>

@@ -16,7 +16,7 @@ const testing = readFileSync(new URL("../extension/TESTING.md", import.meta.url)
 
 test("extension uses a narrow Manifest V3 boundary", () => {
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, "0.1.18");
+  assert.equal(manifest.version, "0.1.19");
   assert.deepEqual(manifest.permissions, ["storage", "activeTab"]);
   assert.deepEqual(manifest.host_permissions, [
     "https://line-oa.fangwl591021.workers.dev/*",
@@ -96,7 +96,7 @@ test("session token remains behind the extension background worker", () => {
   assert.match(background, /sanitizeCrmCapture/);
   assert.match(background, /requireLinePage/);
   assert.doesNotMatch(background, /messages|conversationText|cookie/i);
-  assert.deepEqual(manifest.content_scripts[0].js, ["crm.js", "content.js"]);
+  assert.deepEqual(manifest.content_scripts[0].js, ["crm.js", "learning-core.js", "content.js"]);
   assert.deepEqual(manifest.content_scripts[0].css, ["styles.css", "crm.css"]);
 });
 
@@ -137,6 +137,6 @@ test("chat.line.biz has a visible central-chat fallback", () => {
 });
 test("test instructions state the privacy and no-send boundaries", () => {
   assert.match(testing, /不讀取 Cookie、LINE Token/);
-  assert.match(testing, /不捲動聊天頁、不填入輸入框、不點擊傳送、不自動發送/);
-  assert.match(testing, /聊天文字、聯絡人 UID、名稱與頭貼只在目前瀏覽器頁面使用/);
+  assert.match(testing, /不填入輸入框、不點擊傳送、不自動發送/);
+  assert.match(testing, /人工確認後才上傳題庫/);
 });

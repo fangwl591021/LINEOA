@@ -75,6 +75,7 @@ test("content script inserts one isolated panel and switches modes without touch
     innerWidth: 1400,
     MutationObserver,
     navigator: { clipboard: { async writeText() {} } },
+    setInterval() { return 1; },
     URL
   });
 
