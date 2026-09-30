@@ -33,6 +33,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleMessage(message, sender) {
   const type = String(message?.type || "");
 
+  if (type === "lineoa:runtime-info") {
+    return { ok: true, version: chrome.runtime.getManifest().version };
+  }
+
   if (type === "lineoa:session") {
     const token = await getToken();
     if (!token) return { ok: true, authenticated: false };

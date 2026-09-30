@@ -70,6 +70,8 @@ button.secondary {
   color: #17212b;
 }
 
+button:disabled { opacity: .5; cursor: not-allowed; }
+
 footer {
   border-top: 1px solid #eef1f4;
   margin-top: 8px;

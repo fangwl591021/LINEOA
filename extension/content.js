@@ -2,6 +2,7 @@
 
 (() => {
   const ROOT_ID = "lineoa-extension-root";
+  const PANEL_VERSION = chrome.runtime.getManifest?.().version || "0.1.20";
   const MODE_KEY = "lineoa_panel_mode";
   const LAYOUT_VERSION_KEY = "lineoa_layout_version";
   const LAYOUT_VERSION = 2;
@@ -35,6 +36,9 @@
     root.id = ROOT_ID;
     root.setAttribute("aria-label", "LINEOA 客服輔助工具");
     document.documentElement.appendChild(root);
+    chrome.runtime.onMessage?.addListener((message, _sender, respond) => {
+      if (message?.type === "lineoa:panel-version") respond({ ok: true, version: PANEL_VERSION });
+    });
     bindRootEvents();
     observeReinsertion();
     await globalThis.LINEOA_CRM.init(() => render(), {
@@ -94,6 +98,11 @@
       const button = event.target.closest("button[data-action]");
       if (!button) return;
       const action = button.dataset.action;
+
+      if (action === "reload-page") {
+        if (window.confirm("重整目前 LINE 頁面以載入最新版 LINEOA？未送出的文字可能遺失，請先複製保存。")) location.reload();
+        return;
+      }
 
       if (action === "open-learning") {
         try { await send({ type: "lineoa:learning:open" }); }
@@ -722,7 +731,7 @@
   function send(message) {
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) return reject(new Error("LINEOA 背景服務未連線"));
+        if (chrome.runtime.lastError) return reject(new Error("LINEOA 背景服務未連線；請按右上「重整」。若仍失敗，請檢查 Chrome 擴充功能的錯誤訊息。"));
         if (!response?.ok) return reject(new Error(response?.message || "LINEOA 操作失敗"));
         resolve(response);
       });
@@ -756,8 +765,9 @@
     root.innerHTML = `
       <section class="lineoa-shell" aria-live="polite">
         <header class="lineoa-header">
-          <div><strong>LINEOA</strong><small>聊天室監控 v0.1.19</small></div>
+          <div><strong>LINEOA</strong><small>聊天室監控 v${escapeHtml(PANEL_VERSION)}</small></div>
           <nav aria-label="顯示模式">
+            <button type="button" data-action="reload-page" title="重整目前 LINE 頁面並載入新版 LINEOA" aria-label="重整目前 LINE 頁面">↻</button>
             <button type="button" data-action="mode" data-mode="float" title="縮成懸浮按鈕">—</button>
             <button type="button" data-action="mode" data-mode="full" title="開啟管理全版">□</button>
           </nav>
@@ -792,7 +802,7 @@
     return `
       <section class="lineoa-admin-shell" aria-live="polite">
         <aside class="lineoa-admin-sidebar">
-          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v0.1.19</small></div></div>
+          <div class="lineoa-admin-brand"><span>LO</span><div><strong>LINEOA</strong><small>管理中心 v${escapeHtml(PANEL_VERSION)}</small></div></div>
           <nav>
             ${groupHeader("service", "📦", "服務中心")}
             ${state.adminGroups.service ? `
@@ -815,6 +825,7 @@
             <div class="lineoa-admin-header-actions">
               <span class="lineoa-channel-status"><i></i>通道正常</span>
               <button type="button" data-action="sync" ${state.user ? "" : "disabled"}>重新同步</button>
+              <button type="button" data-action="reload-page">重整頁面</button>
               <button type="button" data-action="mode" data-mode="side" title="回到側邊監控">縮小</button>
               <button type="button" data-action="mode" data-mode="float" title="收合">×</button>
             </div>
